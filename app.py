@@ -7,7 +7,7 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore, auth as firebase_auth
 
-st.set_page_config(page_title='Gestão Almoxarifado | Inventário Rotativo', page_icon='📦', layout='wide', initial_sidebar_state='expanded')
+st.set_page_config(page_title='INVENTÁRIO | SETTA', page_icon='📦', layout='wide', initial_sidebar_state='expanded')
 DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
 
 DEFAULT={
