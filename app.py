@@ -1,7 +1,5 @@
 import os, io, json, base64, pickle, sqlite3, uuid, hashlib
 from datetime import datetime
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError, URLError
 import pandas as pd
 import streamlit as st
 import firebase_admin
@@ -30,7 +28,7 @@ DEFAULT={
  'theme':'Dark','font':'Arial','font_size':16,'title_size':31,
  'primary':'#FFD63B','hover':'#F7C928','icon_color':'#FFD63B','dark_bg':'#080B0A','dark_panel':'#101614','dark_panel2':'#141A17','dark_border':'#2B3732','dark_text':'#F4F5F2','dark_muted':'#A9B1AC',
  'clean_bg':'#F5F6F4','clean_panel':'#FFFFFF','clean_panel2':'#F0F2EF','clean_border':'#D8DDD9','clean_text':'#161A18','clean_muted':'#626B66',
- 'title':'GESTÃO ALMOXARIFADO','subtitle':'01 · ACURÁCIA DE ESTOQUE  |  Inventário Rotativo','sidebar_sub':'SISTEMA OPERACIONAL DE ESTOQUE','menu':'MENU',
+ 'title':'GESTÃO DE ESTOQUE','subtitle':'INVENTÁRIO ROTATIVO • ACURÁCIA • HISTÓRICO','sidebar_sub':'CONTROLE OPERACIONAL SETTA','menu':'NAVEGAÇÃO',
  'dash':'DASHBOARD','inv':'INVENTÁRIO ROTATIVO','db':'BANCO DE DADOS','reg':'REGISTRO','report':'REPORTAR INCONSISTÊNCIAS','settings':'CONFIGURAÇÕES',
  'sidebar_width':250,'menu_gap':2,'report_top':0,'logo_w':190,'logo_h':70,'logo_align':'center','logo_top':-10,'sub_top':0,'menu_top':0,'sidebar_align':'left','sidebar_font':12,'item_h':42,'gap':8,'dash_top':0,'inv_top':0,'db_top':0,'reg_top':0,'settings_top':0,'show_footer':True,
  'blind_default':False,'dashboard_title':'Dashboard','inventory_title':'Inventário Rotativo','database_title':'Banco de Dados','register_title':'Registro','dashboard_subtitle':'Visão geral dos indicadores do estoque.','inventory_subtitle':'Controle e execução dos inventários rotativos.','database_subtitle':'Importação, tratamento e classificação da base de estoque.','register_subtitle':'Histórico dos inventários e das contagens realizadas.'
@@ -176,7 +174,8 @@ for _k, _v in _cfg_defaults.items():
     config.setdefault(_k, _v)
     cfg.setdefault(_k, _v)
 
-# ACESSO DIRETO — SEM LOGIN OU SENHA NESTA ETAPA.
+# ACESSO DIRETO — SEM LOGIN, SENHA OU BLOQUEIO DE AUTENTICAÇÃO NESTA ETAPA.
+AUTH_REQUIRED = False
 def persist_cfg(): save('cfg',cfg)
 def persist_all(): save('inventories',st.session_state.inventories); save('cycles',st.session_state.cycles)
 def persist_eligible():
