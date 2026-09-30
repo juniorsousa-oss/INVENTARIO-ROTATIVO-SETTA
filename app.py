@@ -6,8 +6,24 @@ import pandas as pd
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore, auth as firebase_auth
+from PIL import Image
+import central_inventory_data as central_data
 
-st.set_page_config(page_title='INVENTÁRIO | SETTA', page_icon='📦', layout='wide', initial_sidebar_state='expanded')
+try:
+ _GLOBAL_VISUAL_CONFIG=central_data.load_visual_config()
+except Exception:
+ _GLOBAL_VISUAL_CONFIG={}
+
+def _global_page_icon():
+ try:
+  raw=central_data.favicon_bytes(_GLOBAL_VISUAL_CONFIG)
+  if raw:
+   image=Image.open(io.BytesIO(raw));image.load();return image
+ except Exception:
+  pass
+ return '📦'
+
+st.set_page_config(page_title='INVENTÁRIO | SETTA', page_icon=_global_page_icon(), layout='wide', initial_sidebar_state='expanded')
 DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
 
 DEFAULT={
@@ -345,10 +361,19 @@ def signed_brl(v):
  return ('+' if x>0 else '-')+brl(abs(x))
 
 def logo_uri():
+ global_logo=central_data.logo_data_uri(_GLOBAL_VISUAL_CONFIG)
+ if global_logo:return global_logo
  b,n=st.session_state.logo
  if not b:return None
  ext=n.lower(); mime='image/png' if ext.endswith('.png') else 'image/jpeg' if ext.endswith(('.jpg','.jpeg')) else 'image/webp' if ext.endswith('.webp') else 'image/svg+xml'
  return 'data:'+mime+';base64,'+base64.b64encode(b).decode()
+
+def section_band(kicker,title,note=''):
+ note_html=f'<div class="section-band-note">{note}</div>' if str(note or '').strip() else ''
+ st.markdown(f'<div class="section-band"><div class="section-band-kicker">{kicker}</div><div class="section-band-title">{title}</div>{note_html}</div>',unsafe_allow_html=True)
+
+def topic_divider():
+ st.markdown('<div class="topic-divider"></div>',unsafe_allow_html=True)
 
 def css():
  d=cfg['theme']=='Dark'; vals=(cfg['dark_bg'],cfg['dark_panel'],cfg['dark_panel2'],cfg['dark_border'],cfg['dark_text'],cfg['dark_muted']) if d else (cfg['clean_bg'],cfg['clean_panel'],cfg['clean_panel2'],cfg['clean_border'],cfg['clean_text'],cfg['clean_muted']); bg,panel,panel2,border,text,muted=vals
@@ -365,6 +390,35 @@ section[data-testid="stSidebar"] .stButton{{width:100%!important;margin-bottom:{
 div[data-testid="stVerticalBlockBorderWrapper"]{{background:var(--panel);border-color:var(--border)!important;border-radius:14px}}.stButton>button,.stDownloadButton>button{{border-radius:8px;font-weight:800;border:1px solid var(--border);background:var(--p2);color:var(--text)}}.stButton>button:hover,.stDownloadButton>button:hover{{border-color:var(--p);color:var(--p)}}.stButton>button[kind="primary"]{{background:var(--p);color:#10120F;border-color:var(--p)}}label,.stMarkdown p,.stCaption,.stRadio label,.stCheckbox label{{color:var(--text)!important}}input,textarea{{color:var(--text)!important}}[data-testid="stDataFrame"]{{border:1px solid var(--border);border-radius:10px;overflow:hidden}}
 section[data-testid="stSidebar"] .sidebar-report-spacer{{display:none!important}}section[data-testid="stSidebar"] .sidebar-report-area{{position:absolute;left:10px;right:10px;bottom:18px;margin:0;z-index:20}}section[data-testid="stSidebar"] .sidebar-report-area .stButton{{margin-bottom:0!important}}section[data-testid="stSidebar"] .sidebar-user-area{{position:absolute;left:10px;right:10px;bottom:78px;padding-top:6px;border-top:1px solid var(--border);z-index:19}}section[data-testid="stSidebar"] .sidebar-user-area .stCaption{{font-size:10px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}section[data-testid="stSidebar"] .sidebar-user-area .stButton{{margin:0!important}}section[data-testid="stSidebar"] .sidebar-user-area .stButton>button{{min-height:32px;height:32px;font-size:11px!important}}</style>''',unsafe_allow_html=True)
 css()
+st.markdown('''<style>
+/* SETTA FINAL */
+:root{--bg:#f4f7fb!important;--panel:#ffffff!important;--p2:#f8fafc!important;--border:#e5e8ee!important;--text:#111827!important;--muted:#667085!important;--p:#111827!important;--ph:#111827!important}
+.stApp,[data-testid="stAppViewContainer"]{background:#f4f7fb!important;color:#111827!important}
+[data-testid="stHeader"]{background:rgba(255,255,255,.96)!important}
+.block-container{max-width:1780px!important;padding-top:1.25rem!important;padding-left:2.7rem!important;padding-right:2.7rem!important;padding-bottom:3rem!important;width:100%!important}
+section[data-testid="stSidebar"]{background:#fff!important;border-right:1px solid #e8ebf0!important}
+.logo-area{height:86px!important;transform:none!important;justify-content:center!important}
+.logo-area img{max-width:180px!important;max-height:70px!important;width:auto!important;height:auto!important}
+.sidebar-sub{color:#6b7280!important;text-align:left!important;text-transform:uppercase!important}
+.menu-label{color:#374151!important;text-align:left!important;text-transform:uppercase!important}
+section[data-testid="stSidebar"] .stButton>button{background:#fff!important;color:#374151!important;border:1px solid transparent!important;box-shadow:none!important;text-transform:uppercase!important}
+section[data-testid="stSidebar"] .stButton>button:hover{background:#f8fafc!important;border-color:#e5e7eb!important;color:#111827!important}
+section[data-testid="stSidebar"] .stButton>button[kind="primary"]{background:#111827!important;color:#fff!important;border-color:#111827!important;box-shadow:0 5px 14px rgba(17,24,39,.14)!important}
+.main-logo-card{width:100%;min-height:112px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #e5e8ee;border-radius:16px;box-shadow:0 4px 14px rgba(24,39,75,.08);margin:0 0 1.55rem 0;padding:1rem 2rem;box-sizing:border-box}
+.main-logo-card img{display:block;max-width:205px;max-height:82px;width:auto;height:auto;object-fit:contain}
+.main-title{font-size:2.45rem!important;font-weight:800!important;line-height:1.08!important;color:#050505!important;margin:0!important;text-transform:uppercase!important;letter-spacing:-.04em!important}
+.main-subtitle{color:#4f5661!important;font-size:.94rem!important;margin-top:.55rem!important;margin-bottom:1.2rem!important;text-transform:uppercase!important}
+.section-band{margin:1.25rem 0 .95rem;padding:.82rem 1rem;background:#fff;border:1px solid #e5e8ee;border-left:5px solid #111827;border-radius:12px;box-shadow:0 3px 12px rgba(15,23,42,.035)}
+.section-band-kicker{font-size:.66rem;font-weight:900;letter-spacing:.085em;text-transform:uppercase;color:#ef4444;margin-bottom:.18rem}
+.section-band-title{font-size:1.08rem;font-weight:900;color:#111827;letter-spacing:-.015em;line-height:1.2;text-transform:uppercase}
+.section-band-note{margin-top:.22rem;color:#667085;font-size:.75rem}
+.topic-divider{height:1px;background:#cbd5e1;margin:1.55rem 0 1.05rem;width:100%}
+[data-testid="stMetric"],div[data-testid="stVerticalBlockBorderWrapper"]{background:#fff!important;border:1px solid #e5e8ee!important;border-radius:14px!important;box-shadow:0 4px 16px rgba(15,23,42,.045)!important}
+[data-testid="stMetricLabel"] p{text-transform:uppercase!important;font-weight:800!important;color:#475569!important}
+[data-testid="stDataFrame"]{background:#fff!important;border:1px solid #dfe3e8!important;border-radius:14px!important;overflow:hidden!important}
+h1,h2,h3,h4,label,[data-testid="stWidgetLabel"] p{text-transform:uppercase!important}
+@media(max-width:900px){.block-container{padding-top:1rem!important;padding-left:1rem!important;padding-right:1rem!important}.main-logo-card{min-height:100px;padding:.8rem 1rem}.main-title{font-size:2rem!important}}
+</style>''',unsafe_allow_html=True)
 
 def ncode(s): return s.astype('string').fillna('').str.strip().str.replace(r'\.0$','',regex=True).str.zfill(8)
 def naddr(s): return s.astype('string').fillna('').str.strip().str.replace(r'\s+',' ',regex=True).str.upper()
@@ -447,6 +501,97 @@ def close_inv(inv):
    rep['encerrado_em']=datetime.now().strftime('%d/%m/%Y %H:%M:%S')
  persist_reports();persist_inv(inv)
 
+
+def _central_frames():
+ bundle=central_data.bundle_state()
+ frames={}
+ metas={}
+ for key in ('analitico','endereco'):
+  meta=bundle.get(key) or {}
+  if not bool(meta.get('available')):raise RuntimeError(f'FONTE {key.upper()} NÃO DISPONÍVEL NA CENTRAL.')
+  token=central_data.source_token(meta)
+  raw,remote=central_data.download_source(key,token)
+  frames[key]=readxls(io.BytesIO(raw))
+  metas[key]=meta
+ return frames,metas
+
+def sync_central_inventory(force=False):
+ try:
+  bundle=central_data.bundle_state()
+  states=central_data.sync_state()
+  changed=False
+  for key in ('analitico','endereco'):
+   meta=bundle.get(key) or {}
+   if not bool(meta.get('available')):continue
+   token=central_data.source_token(meta)
+   state=states.get(key) or {}
+   if force or str(state.get('version_token') or '')!=token or str(state.get('status') or '').upper()!='ATUALIZADO':
+    changed=True
+  if not changed:return False
+
+  frames,metas=_central_frames()
+  an=frames['analitico'];en=frames['endereco']
+  addresses=sorted([x for x in naddr(en.iloc[:,3]).unique() if x])
+  if not st.session_state.eligible:
+   st.session_state.eligible=addresses.copy()
+  else:
+   valid=set(addresses)
+   st.session_state.eligible=[x for x in st.session_state.eligible if x in valid]
+  d,pos=build_db(an,en,st.session_state.eligible)
+  st.session_state.an_df=an
+  st.session_state.en_df=en
+  st.session_state.db=d
+  st.session_state.pos=pos
+  persist_db()
+
+  for key,frame in (('analitico',an),('endereco',en)):
+   meta=metas[key]
+   central_data.commit_sync(key,central_data.source_token(meta),meta.get('last_update_at'),len(frame),status='ATUALIZADO')
+  st.session_state['_central_inventory_success']='ANALÍTICO · ENDEREÇO'
+  return True
+ except Exception as exc:
+  st.session_state['_central_inventory_error']=str(exc)
+  try:
+   bundle=central_data.bundle_state()
+   for key in ('analitico','endereco'):
+    meta=bundle.get(key) or {}
+    if meta:
+     central_data.commit_sync(key,central_data.source_token(meta),meta.get('last_update_at'),0,status='ERRO',error_message=str(exc)[:1200])
+  except Exception:
+   pass
+  return False
+
+def ensure_central_frames():
+ if st.session_state.get('an_df') is not None and st.session_state.get('en_df') is not None:return
+ try:
+  frames,_=_central_frames()
+  st.session_state.an_df=frames['analitico']
+  st.session_state.en_df=frames['endereco']
+ except Exception as exc:
+  st.session_state['_central_inventory_error']=str(exc)
+
+def render_api_monitor():
+ section_band('01 · FONTES','ACOMPANHAMENTO DE API')
+ try:
+  bundle=central_data.bundle_state();states=central_data.sync_state()
+ except Exception as exc:
+  st.warning(f'CENTRAL INDISPONÍVEL: {exc}');return
+ cols=st.columns(2)
+ for col,key,label in zip(cols,('analitico','endereco'),('ANALÍTICO','ENDEREÇO')):
+  meta=bundle.get(key) or {};state=states.get(key) or {}
+  status=str(state.get('status') or ('AGUARDANDO' if meta else 'INDISPONÍVEL')).upper()
+  version=f"V{int(meta.get('version') or 0)}"
+  when=central_data.format_dt(state.get('synced_at') or meta.get('last_update_at'))
+  rows=int(state.get('rows_count') or meta.get('rows_count') or 0)
+  col.markdown(f'<div style="background:#fff;border:1px solid #e5e8ee;border-radius:14px;padding:1rem;box-shadow:0 4px 16px rgba(15,23,42,.045)"><div style="font-size:.7rem;font-weight:900;color:#64748b">{label}</div><div style="font-size:1rem;font-weight:900;margin:.25rem 0">{status}</div><div style="font-size:.72rem;color:#667085">{version} · {rows:,} REGISTROS · {when}</div></div>',unsafe_allow_html=True)
+ if st.session_state.get('_central_inventory_success'):st.success('FONTES ATUALIZADAS · '+str(st.session_state.pop('_central_inventory_success')))
+ if st.session_state.get('_central_inventory_error'):st.warning(str(st.session_state.get('_central_inventory_error')))
+ if st.button('REPROCESSAR FONTES',use_container_width=True,key='reprocess_inventory_sources'):
+  if sync_central_inventory(force=True):st.rerun()
+
+if sync_central_inventory(force=False):
+ st.rerun()
+
 # Sidebar
 with st.sidebar:
  u=logo_uri()
@@ -470,7 +615,9 @@ with st.sidebar:
  if st.button('SAIR',key='logout_btn',icon=':material/logout:',use_container_width=True): auth_logout()
  st.markdown('</div>',unsafe_allow_html=True)
 
-st.markdown(f'<div class="main-title">{config["title"]}</div><div class="main-subtitle">{config["subtitle"]}</div>',unsafe_allow_html=True)
+_main_logo=logo_uri()
+if _main_logo:st.markdown(f'<div class="main-logo-card"><img src="{_main_logo}"></div>',unsafe_allow_html=True)
+st.markdown(f'<div class="main-title">INVENTÁRIO ROTATIVO | SETTA</div><div class="main-subtitle">ACURÁCIA DE ESTOQUE • CONTAGENS • HISTÓRICO</div>',unsafe_allow_html=True)
 active=st.session_state.section
 
 # Dashboard
@@ -635,37 +782,53 @@ elif active=='Inventário Rotativo':
 
 # Database
 elif active=='Banco de Dados':
- st.subheader(config['database_title']);st.caption('Base atual: ESTOQUE ANALÍTICO + ENDEREÇO. Lote continua ignorado.')
- a,b=st.columns(2)
- with a:
-  f=st.file_uploader('1. Relatório ESTOQUE ANALÍTICO',type=['xlsx','xlsm','xltx'],key='up_an',help='A=Código, D=Descrição, H=Quantidade/Saldo, K=Valor em Estoque')
-  if f:st.session_state.an_df=readxls(f);save('an_name',f.name);st.success(f'Carregado: {f.name} · {len(st.session_state.an_df):,} linhas')
- with b:
-  f=st.file_uploader('2. Relatório ENDEREÇO',type=['xlsx','xlsm','xltx'],key='up_en',help='A=Código, D=Endereço, H=Quantidade')
-  if f:st.session_state.en_df=readxls(f);save('en_name',f.name);st.success(f'Carregado: {f.name} · {len(st.session_state.en_df):,} linhas')
- if 'an_df' not in st.session_state:st.session_state.an_df=None
- if 'en_df' not in st.session_state:st.session_state.en_df=None
- if st.session_state.an_df is not None and st.session_state.en_df is not None:
-  st.divider();st.subheader(config['address_title']);addresses=sorted([x for x in naddr(st.session_state.en_df.iloc[:,3]).unique() if x])
+ section_band('01 · BASE ATUAL','ANALÍTICO + ENDEREÇO')
+ render_api_monitor()
+ ensure_central_frames()
+
+ if st.session_state.en_df is not None:
+  topic_divider();section_band('02 · ENDEREÇOS','ENDEREÇOS ELEGÍVEIS')
+  addresses=sorted([x for x in naddr(st.session_state.en_df.iloc[:,3]).unique() if x])
   if not st.session_state.eligible:st.session_state.eligible=addresses.copy()
-  q=st.text_input('Pesquisar endereço',placeholder='Ex.: G9-M3-A-C1');shown=[x for x in addresses if q.strip().upper() in x] if q.strip() else addresses
-  a,b,c=st.columns(3)
-  if a.button('Marcar exibidos'):st.session_state.eligible=sorted(set(st.session_state.eligible)|set(shown));persist_db();st.rerun()
-  if b.button('Desmarcar exibidos'):st.session_state.eligible=[x for x in st.session_state.eligible if x not in set(shown)];persist_db();st.rerun()
-  if c.button('Marcar todos'):st.session_state.eligible=addresses.copy();persist_db();st.rerun()
-  selected=set(st.session_state.eligible);st.caption(f'{len(shown)} endereços exibidos · {len(selected)} aptos');cols=st.columns(4)
+  q=st.text_input('PESQUISAR ENDEREÇO',placeholder='EX.: G9-M3-A-C1')
+  shown=[x for x in addresses if q.strip().upper() in x] if q.strip() else addresses
+  a,b,c3=st.columns(3)
+  if a.button('MARCAR EXIBIDOS'):st.session_state.eligible=sorted(set(st.session_state.eligible)|set(shown));persist_db();st.rerun()
+  if b.button('DESMARCAR EXIBIDOS'):st.session_state.eligible=[x for x in st.session_state.eligible if x not in set(shown)];persist_db();st.rerun()
+  if c3.button('MARCAR TODOS'):st.session_state.eligible=addresses.copy();persist_db();st.rerun()
+  selected=set(st.session_state.eligible);st.caption(f'{len(shown)} ENDEREÇOS EXIBIDOS · {len(selected)} APTOS');cols=st.columns(4)
   for i,addr in enumerate(shown):
    with cols[i%4]:
     v=st.checkbox(addr,value=addr in selected,key='address_'+str(abs(hash(addr))))
     if v!=(addr in selected):
      selected.add(addr) if v else selected.discard(addr);st.session_state.eligible=sorted(selected);persist_eligible()
-  a,b=st.columns(2);a.metric('Endereços encontrados',len(addresses));b.metric('Endereços aptos',len(st.session_state.eligible))
-  if st.button('PROCESSAR E ATUALIZAR BANCO',type='primary'):
+  a,b=st.columns(2);a.metric('ENDEREÇOS ENCONTRADOS',len(addresses));b.metric('ENDEREÇOS APTOS',len(st.session_state.eligible))
+  if st.button('ATUALIZAR BANCO COM ENDEREÇOS SELECIONADOS',type='primary',use_container_width=True):
    try:
-    d,pos=build_db(st.session_state.an_df,st.session_state.en_df,st.session_state.eligible);st.session_state.db=d;st.session_state.pos=pos;st.session_state.cycles={};persist_db();save('cycles',{});st.success('Banco processado e salvo.')
-   except Exception as e:st.error(f'Erro: {e}')
+    d,pos=build_db(st.session_state.an_df,st.session_state.en_df,st.session_state.eligible);st.session_state.db=d;st.session_state.pos=pos;persist_db();st.success('BANCO ATUALIZADO.')
+   except Exception as e:st.error(f'ERRO: {e}')
+
+ topic_divider()
+ with st.expander('CONTINGÊNCIA MANUAL',expanded=False):
+  a,b=st.columns(2)
+  with a:
+   f=st.file_uploader('ANALÍTICO',type=['xlsx','xlsm','xltx'],key='up_an')
+   if f:st.session_state.an_df=readxls(f);save('an_name',f.name);st.success(f'CARREGADO · {len(st.session_state.an_df):,} LINHAS')
+  with b:
+   f=st.file_uploader('ENDEREÇO',type=['xlsx','xlsm','xltx'],key='up_en')
+   if f:st.session_state.en_df=readxls(f);save('en_name',f.name);st.success(f'CARREGADO · {len(st.session_state.en_df):,} LINHAS')
+  if st.session_state.get('an_df') is not None and st.session_state.get('en_df') is not None:
+   if st.button('PROCESSAR CONTINGÊNCIA',type='primary',use_container_width=True):
+    try:
+     addresses=sorted([x for x in naddr(st.session_state.en_df.iloc[:,3]).unique() if x])
+     if not st.session_state.eligible:st.session_state.eligible=addresses.copy()
+     d,pos=build_db(st.session_state.an_df,st.session_state.en_df,st.session_state.eligible);st.session_state.db=d;st.session_state.pos=pos;persist_db();st.success('CONTINGÊNCIA PROCESSADA.')
+    except Exception as e:st.error(f'ERRO: {e}')
+
  if st.session_state.db is not None:
-  st.divider();st.subheader('Banco consolidado');v=st.session_state.db.copy();v['valor_unitario']=v.valor_unitario.map(brl);v['saldo_apto']=v.saldo_apto.map(fn);v['valor_k']=v.valor_k.map(brl);v['valor_total']=v.valor_total.map(brl);v.columns=['Código','Descrição','Qtd. Analítico','Valor Total K','Valor Unitário','Saldo Apto','Valor Total Apto','Classificação R$ UN.','Classificação R$ TOTAL'];st.dataframe(v,use_container_width=True,hide_index=True,height=500);st.download_button('Exportar banco em Excel',excel_bytes(v,'Banco Consolidado'),'banco_consolidado.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');st.caption('Valor Unitário = K ÷ H. Valor Total do saldo apto = Saldo Apto × Valor Unitário. A Classificação R$ TOTAL usa o valor K do Estoque Analítico.')
+  topic_divider();section_band('03 · DADOS','BANCO CONSOLIDADO')
+  v=st.session_state.db.copy();v['valor_unitario']=v.valor_unitario.map(brl);v['saldo_apto']=v.saldo_apto.map(fn);v['valor_k']=v.valor_k.map(brl);v['valor_total']=v.valor_total.map(brl);v.columns=['CÓDIGO','DESCRIÇÃO','QTD. ANALÍTICO','VALOR TOTAL K','VALOR UNITÁRIO','SALDO APTO','VALOR TOTAL APTO','CLASSIFICAÇÃO R$ UN.','CLASSIFICAÇÃO R$ TOTAL'];st.dataframe(v,use_container_width=True,hide_index=True,height=500);st.download_button('EXPORTAR BANCO EM EXCEL',excel_bytes(v,'Banco Consolidado'),'banco_consolidado.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
 
 # Register
 elif active=='Registro':
@@ -785,32 +948,12 @@ elif active=='Usuários' and st.session_state.profile=='Admin':
 
 # Settings
 elif active=='Configurações':
- st.subheader('Configurações');st.caption('Agora as configurações são gravadas em armazenamento local do aplicativo. Cada grupo abaixo é independente.')
- with st.expander('01 · TEMA',True):
-  t=st.radio('Modo',['Dark','Clean'],index=0 if cfg['theme']=='Dark' else 1,horizontal=True)
-  if t!=cfg['theme']:cfg['theme']=t;persist_cfg();st.rerun()
- with st.expander('02 · TIPOGRAFIA',True):
-  fonts=['Arial','Inter','Roboto','Poppins','Montserrat','Georgia','Verdana','Trebuchet MS'];a,b=st.columns(2);cfg['font']=a.selectbox('Tipo de letra',fonts,index=fonts.index(cfg['font']));cfg['font_size']=b.slider('Tamanho geral',12,22,cfg['font_size']);cfg['title_size']=st.slider('Tamanho do título',22,48,cfg['title_size'])
- with st.expander('03 · CORES',True):
-  a,b=st.columns(2);cfg['primary']=a.color_picker('Cor principal',cfg['primary']);cfg['hover']=b.color_picker('Cor ao passar o mouse',cfg['hover']);keys=['dark_bg','dark_panel','dark_panel2','dark_border','dark_text','dark_muted'] if cfg['theme']=='Dark' else ['clean_bg','clean_panel','clean_panel2','clean_border','clean_text','clean_muted'];labs=['Fundo','Painéis','Painel secundário','Bordas','Texto','Texto secundário'];a,b=st.columns(2)
-  for i,k in enumerate(keys):
-   cfg[k]=(a if i%2==0 else b).color_picker(labs[i],cfg[k],key='cp_'+k)
-  # widgets acima atualizam seus próprios valores no próximo rerun; abaixo usamos uma forma direta para os seis campos
-  for k in keys:
-   if k not in cfg:cfg[k]=DEFAULT[k]
- with st.expander('04 · LOGO',True):
-  f=st.file_uploader('Logo da empresa',type=['png','jpg','jpeg','webp','svg'],key='logo_up')
-  if f:st.session_state.logo=(f.getvalue(),f.name);save('logo',st.session_state.logo)
-  a,b,c=st.columns(3);cfg['logo_w']=a.slider('Largura',80,320,cfg['logo_w']);cfg['logo_h']=b.slider('Altura',40,180,cfg['logo_h']);cfg['logo_align']=c.selectbox('Alinhamento',['left','center','right'],index=['left','center','right'].index(cfg['logo_align']));cfg['logo_top']=st.slider('Subir / descer logo',-100,100,cfg['logo_top'])
-  if st.session_state.logo[0]:st.image(st.session_state.logo[0],width=min(cfg['logo_w'],320));
-  if st.button('Remover logo'):st.session_state.logo=(None,'');save('logo',st.session_state.logo);st.rerun()
- with st.expander('05 · ELEMENTOS DA LATERAL — INDEPENDENTES',True):
-  cfg['sidebar_sub']=st.text_input('Texto abaixo da logo',cfg['sidebar_sub']);cfg['sub_top']=st.slider('Posição do subtítulo',-60,100,cfg['sub_top']);cfg['menu']=st.text_input('Título do menu',cfg['menu']);cfg['menu_top']=st.slider('Posição do título MENU',-60,100,cfg['menu_top']);cfg['gap']=st.slider('Espaço antes do MENU',0,60,cfg['gap']);cfg['menu_gap']=st.slider('Espaçamento entre botões do menu',0,40,cfg.get('menu_gap',8));cfg['sidebar_align']=st.selectbox('Alinhamento dos tópicos',['left','center','right'],index=['left','center','right'].index(cfg['sidebar_align']));cfg['sidebar_font']=st.slider('Tamanho dos tópicos',10,22,cfg['sidebar_font']);cfg['item_h']=st.slider('Altura dos tópicos',30,70,cfg['item_h']);cfg['icon_color']=st.color_picker('Cor dos ícones',cfg['icon_color'])
-  a,b=st.columns(2);cfg['dash_top']=a.slider('Dashboard — posição',-30,50,cfg['dash_top']);cfg['inv_top']=b.slider('Inventário — posição',-30,50,cfg['inv_top']);a,b=st.columns(2);cfg['db_top']=a.slider('Banco — posição',-30,50,cfg['db_top']);cfg['reg_top']=b.slider('Registro — posição',-30,50,cfg['reg_top']);a,b=st.columns(2);cfg['report_top']=a.slider('Reportar Inconsistências — posição',-30,50,cfg.get('report_top',0));cfg['settings_top']=b.slider('Configurações — posição',-30,50,cfg['settings_top'])
-  st.caption('Cada tópico pode ter sua própria posição vertical.')
-  for k,l in [('dash','Dashboard'),('inv','Inventário Rotativo'),('db','Banco de Dados'),('reg','Registro'),('report','Reportar Inconsistências'),('settings','Configurações')]:cfg[k]=st.text_input(l,cfg[k],key='menu_'+k)
- with st.expander('06 · TEXTOS DAS PÁGINAS',False):
-  for k,l in [('title','Título principal'),('subtitle','Subtítulo principal'),('dashboard_title','Título Dashboard'),('inventory_title','Título Inventário'),('database_title','Título Banco'),('register_title','Título Registro')]:cfg[k]=st.text_input(l,cfg.get(k,DEFAULT.get(k,'')),key='pg_'+k)
- with st.expander('07 · INVENTÁRIO',True):cfg['blind_default']=st.checkbox('Contagem cega por padrão',cfg['blind_default'])
- if st.button('SALVAR TODAS AS CONFIGURAÇÕES',type='primary',use_container_width=True):persist_cfg();st.success('Configurações salvas.');st.rerun()
- if st.button('RESTAURAR PADRÃO'):st.session_state.cfg=DEFAULT.copy();persist_cfg();st.rerun()
+ tab_inv,tab_api=st.tabs(['INVENTÁRIO','ACOMPANHAMENTO DE API'])
+ with tab_inv:
+  section_band('01 · INVENTÁRIO','CONFIGURAÇÕES OPERACIONAIS')
+  cfg['blind_default']=st.checkbox('CONTAGEM CEGA POR PADRÃO',cfg['blind_default'])
+  if st.button('SALVAR CONFIGURAÇÕES',type='primary',use_container_width=True):
+   persist_cfg();st.success('CONFIGURAÇÕES SALVAS.')
+ with tab_api:
+  render_api_monitor()
+
