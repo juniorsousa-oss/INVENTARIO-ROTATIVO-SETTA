@@ -32,6 +32,14 @@ jobs:
           assert "CONTINGÊNCIA MANUAL" in app
           assert "ACOMPANHAMENTO DE API" in app
           assert "'analitico','endereco'" in app
+          assert "AUTH_REQUIRED = False" in app
+          assert "signInWithPassword" not in app
+          assert "auth_user" not in app
+          assert "FIREBASE_AUTH_URL" not in app
+          assert "setta-logo-card" in app
+          assert "sidebar-brand" in app
+          assert "section-band" in app
+          assert "GESTÃO DE ESTOQUE | SETTA" in app
           assert "consumer_sync_status" in central
           assert "visual_get" in central
           print("CENTRAL_INVENTARIO_OK")
