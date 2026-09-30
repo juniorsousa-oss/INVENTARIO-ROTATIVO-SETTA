@@ -1,0 +1,38 @@
+name: Validar Central Inventário
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app.py'
+      - 'central_inventory_data.py'
+      - 'requirements.txt'
+      - '.github/workflows/central-inventory-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+      - name: Compilar
+        run: python -m py_compile app.py central_inventory_data.py
+      - name: Validar integração
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          app = Path("app.py").read_text(encoding="utf-8")
+          central = Path("central_inventory_data.py").read_text(encoding="utf-8")
+          assert "def sync_central_inventory" in app
+          assert "CONTINGÊNCIA MANUAL" in app
+          assert "ACOMPANHAMENTO DE API" in app
+          assert "'analitico','endereco'" in app
+          assert "consumer_sync_status" in central
+          assert "visual_get" in central
+          print("CENTRAL_INVENTARIO_OK")
+          PY
