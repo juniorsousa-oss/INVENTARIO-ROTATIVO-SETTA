@@ -23,7 +23,7 @@ def _global_page_icon():
   pass
  return '📦'
 
-st.set_page_config(page_title='INVENTÁRIO | SETTA', page_icon=_global_page_icon(), layout='wide', initial_sidebar_state='expanded')
+st.set_page_config(page_title='GESTÃO DE ESTOQUE | SETTA', page_icon=_global_page_icon(), layout='wide', initial_sidebar_state='expanded')
 DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
 
 DEFAULT={
@@ -736,7 +736,7 @@ button[kind="primary"],button[data-testid="stBaseButton-primary"]{
 # Sidebar
 with st.sidebar:
  st.markdown(
-  '<div class="sidebar-brand"><div class="sidebar-brand-title">INVENTÁRIO ROTATIVO</div><div class="sidebar-brand-sub">CONTROLE OPERACIONAL SETTA</div></div>',
+  '<div class="sidebar-brand"><div class="sidebar-brand-title">GESTÃO DE ESTOQUE</div><div class="sidebar-brand-sub">CONTROLE OPERACIONAL SETTA</div></div>',
   unsafe_allow_html=True
  )
  st.markdown('<div class="sidebar-section-label">NAVEGAÇÃO</div>',unsafe_allow_html=True)
@@ -753,7 +753,7 @@ with st.sidebar:
  st.session_state.section=_selected
  st.divider()
  st.markdown(
-  '<div class="sidebar-info-card"><b>ACESSO</b><br>LIVRE PARA VALIDAÇÃO<br><br><b>CENTRAL DE DADOS</b><br>ANALÍTICO · ENDEREÇO</div>',
+  '<div class="sidebar-info-card"><b>ACESSO</b><br>LIVRE · SEM LOGIN · SEM SENHA<br><br><b>CENTRAL DE DADOS</b><br>ANALÍTICO · ENDEREÇO</div>',
   unsafe_allow_html=True
  )
 
@@ -761,8 +761,8 @@ with st.sidebar:
 _main_logo=logo_uri()
 _logo_html=(f'<img src="{_main_logo}" alt="SETTA">' if _main_logo else '<div style="font-size:2rem;font-weight:800;color:#202124">SETTA</div>')
 st.markdown(f'<div class="setta-logo-card">{_logo_html}</div>',unsafe_allow_html=True)
-st.markdown('<h1 class="app-title">INVENTÁRIO ROTATIVO | SETTA</h1>',unsafe_allow_html=True)
-st.markdown('<p class="app-sub">ACURÁCIA DE ESTOQUE • CONTAGENS • HISTÓRICO</p>',unsafe_allow_html=True)
+st.markdown('<h1 class="app-title">GESTÃO DE ESTOQUE | SETTA</h1>',unsafe_allow_html=True)
+st.markdown('<p class="app-sub">INVENTÁRIO ROTATIVO • ACURÁCIA • CONTAGENS • HISTÓRICO</p>',unsafe_allow_html=True)
 active=st.session_state.section
 
 # Dashboard
@@ -809,7 +809,7 @@ elif active=='Inventário Rotativo':
  section_band('01 · INVENTÁRIO','CONTROLE E EXECUÇÃO')
  if st.session_state.db is None:st.info('Primeiro importe e processe a base na aba Banco de Dados.')
  else:
-  a,b=st.columns(2);st.session_state.profile=a.radio('Perfil de teste',['Operador','Gestor'],index=0 if st.session_state.profile=='Operador' else 1,horizontal=True)
+  a,b=st.columns(2);st.session_state.profile=a.radio('MODO OPERACIONAL',['Operador','Gestor'],index=0 if st.session_state.profile=='Operador' else 1,horizontal=True)
   if b.button(config['new_inventory_text'],type='primary',use_container_width=True):st.session_state.new_inv=True;st.rerun()
   if st.session_state.new_inv:
    with st.container(border=True):
