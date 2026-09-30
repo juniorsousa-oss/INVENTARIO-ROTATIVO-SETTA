@@ -5,7 +5,7 @@ from urllib.error import HTTPError, URLError
 import pandas as pd
 import streamlit as st
 import firebase_admin
-from firebase_admin import credentials, firestore, auth as firebase_auth
+from firebase_admin import credentials, firestore
 from PIL import Image
 import central_inventory_data as central_data
 
@@ -137,37 +137,6 @@ def firestore_load_eligible():
     except Exception:
         return None
 
-def load_user_profile():
-    user = st.session_state.get('auth_user') or {}
-    uid = user.get('localId','')
-    email = (user.get('email') or '').strip().lower()
-    if not uid: return 'Operador'
-    # Bootstrap admin must be recognized even if Firestore is temporarily unavailable.
-    bootstrap = str(st.secrets.get('FIREBASE_BOOTSTRAP_ADMIN_EMAIL','')).strip().lower()
-    if bootstrap and email and email == bootstrap:
-        db = firebase_db()
-        if db is not None:
-            try:
-                db.collection('usuarios').document(uid).set({'email':email,'nome':email.split('@')[0],'perfil':'ADMIN','ativo':True,'atualizado_em':firestore.SERVER_TIMESTAMP}, merge=True)
-            except Exception:
-                pass
-        return 'Admin'
-    db = firebase_db()
-    if db is None: return 'Operador'
-    try:
-        ref=db.collection('usuarios').document(uid)
-        snap=ref.get()
-        if snap.exists:
-            data=snap.to_dict() or {}
-            if data.get('ativo') is False:
-                auth_logout()
-                return 'Operador'
-            perfil=str(data.get('perfil','OPERADOR')).upper()
-            return {'ADMIN':'Admin','GESTOR':'Gestor','OPERADOR':'Operador'}.get(perfil,'Operador')
-        ref.set({'email':email,'nome':email.split('@')[0] if email else 'Usuário','perfil':'OPERADOR','ativo':True,'criado_em':firestore.SERVER_TIMESTAMP})
-        return 'Operador'
-    except Exception:
-        return 'Operador'
 
 if 'cfg' not in st.session_state: st.session_state.cfg={**DEFAULT,**(load('cfg',{}) or {})}
 if 'logo' not in st.session_state: st.session_state.logo=load('logo',(None,''))
@@ -207,9 +176,7 @@ for _k, _v in _cfg_defaults.items():
     config.setdefault(_k, _v)
     cfg.setdefault(_k, _v)
 
-# ACESSO TEMPORARIAMENTE LIVRE — autenticação será redesenhada em etapa futura.
-if 'auth_user' not in st.session_state: st.session_state.auth_user=None
-
+# ACESSO DIRETO — SEM LOGIN OU SENHA NESTA ETAPA.
 def persist_cfg(): save('cfg',cfg)
 def persist_all(): save('inventories',st.session_state.inventories); save('cycles',st.session_state.cycles)
 def persist_eligible():
@@ -288,7 +255,7 @@ section[data-testid="stSidebar"] .stButton{{width:100%!important;margin-bottom:{
 [data-testid="stMetric"]{{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:17px 19px;min-height:105px}}[data-testid="stMetricLabel"] p{{color:var(--muted)!important;font-size:11px!important;font-weight:800!important;letter-spacing:.5px;text-transform:uppercase}}[data-testid="stMetricValue"]{{color:var(--text)}}
 div[data-testid="stVerticalBlockBorderWrapper"]{{background:var(--panel);border-color:var(--border)!important;border-radius:14px}}.stButton>button,.stDownloadButton>button{{border-radius:8px;font-weight:800;border:1px solid var(--border);background:var(--p2);color:var(--text)}}.stButton>button:hover,.stDownloadButton>button:hover{{border-color:var(--p);color:var(--p)}}.stButton>button[kind="primary"]{{background:var(--p);color:#10120F;border-color:var(--p)}}label,.stMarkdown p,.stCaption,.stRadio label,.stCheckbox label{{color:var(--text)!important}}input,textarea{{color:var(--text)!important}}[data-testid="stDataFrame"]{{border:1px solid var(--border);border-radius:10px;overflow:hidden}}
 section[data-testid="stSidebar"] .sidebar-report-spacer{{display:none!important}}section[data-testid="stSidebar"] .sidebar-report-area{{position:absolute;left:10px;right:10px;bottom:18px;margin:0;z-index:20}}section[data-testid="stSidebar"] .sidebar-report-area .stButton{{margin-bottom:0!important}}section[data-testid="stSidebar"] .sidebar-user-area{{position:absolute;left:10px;right:10px;bottom:78px;padding-top:6px;border-top:1px solid var(--border);z-index:19}}section[data-testid="stSidebar"] .sidebar-user-area .stCaption{{font-size:10px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}section[data-testid="stSidebar"] .sidebar-user-area .stButton{{margin:0!important}}section[data-testid="stSidebar"] .sidebar-user-area .stButton>button{{min-height:32px;height:32px;font-size:11px!important}}</style>''',unsafe_allow_html=True)
-css()
+# O layout legado não é executado. Somente o padrão SETTA abaixo é aplicado.
 st.markdown('''<style>
 /* SETTA FINAL */
 :root{--bg:#f4f7fb!important;--panel:#ffffff!important;--p2:#f8fafc!important;--border:#e5e8ee!important;--text:#111827!important;--muted:#667085!important;--p:#111827!important;--ph:#111827!important}
