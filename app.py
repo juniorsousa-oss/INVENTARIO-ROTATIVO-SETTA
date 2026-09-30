@@ -185,7 +185,7 @@ if 'new_inv' not in st.session_state: st.session_state.new_inv=False
 if 'profile' not in st.session_state: st.session_state.profile='Operador'
 if 'reports' not in st.session_state: st.session_state.reports=load('reports',{}) or {}
 
-st.session_state.profile=load_user_profile()
+if st.session_state.profile not in ('Operador','Gestor'): st.session_state.profile='Operador'
 cfg=st.session_state.cfg
 config=cfg
 
@@ -207,109 +207,8 @@ for _k, _v in _cfg_defaults.items():
     config.setdefault(_k, _v)
     cfg.setdefault(_k, _v)
 
-# Authentication: Firebase Authentication (email + password). Session remains server-side in Streamlit.
-FIREBASE_API_KEY = st.secrets.get('FIREBASE_API_KEY', 'AIzaSyDkS32UBjttYW1bWFho60EUnP4DXRYnKps')
-FIREBASE_AUTH_URL = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword'
+# ACESSO TEMPORARIAMENTE LIVRE — autenticação será redesenhada em etapa futura.
 if 'auth_user' not in st.session_state: st.session_state.auth_user=None
-
-def auth_login(email, password):
-    if not FIREBASE_API_KEY:
-        return None, 'A autenticação ainda não foi configurada no aplicativo.'
-    try:
-        body=json.dumps({'email':email.strip().lower(),'password':password,'returnSecureToken':True}).encode('utf-8')
-        req=Request(FIREBASE_AUTH_URL+'?key='+FIREBASE_API_KEY,data=body,headers={'Content-Type':'application/json'},method='POST')
-        with urlopen(req,timeout=15) as resp: data=json.loads(resp.read().decode('utf-8'))
-        return data, None
-    except HTTPError as e:
-        try:
-            raw=e.read().decode('utf-8')
-            info=json.loads(raw)
-            code=(info.get('error') or {}).get('message','')
-            messages={
-                'INVALID_LOGIN_CREDENTIALS':'E-mail ou senha inválidos.',
-                'INVALID_PASSWORD':'E-mail ou senha inválidos.',
-                'EMAIL_NOT_FOUND':'E-mail ou senha inválidos.',
-                'USER_DISABLED':'Este usuário está desativado.',
-                'TOO_MANY_ATTEMPTS_TRY_LATER':'Muitas tentativas. Tente novamente mais tarde.'
-            }
-            msg=messages.get(code,'Não foi possível realizar o login.')
-        except Exception:
-            msg='Não foi possível realizar o login.'
-        return None, msg
-    except (URLError, TimeoutError):
-        return None, 'Não foi possível conectar ao serviço de autenticação.'
-    except Exception:
-        return None, 'Não foi possível realizar o login.'
-
-def auth_logout():
-    st.session_state.auth_user=None
-    st.session_state.pop('auth_access_token',None)
-    st.session_state.pop('auth_refresh_token',None)
-    st.rerun()
-
-def render_login():
-    b,n = st.session_state.logo
-    login_logo = None
-    if b:
-        ext=n.lower()
-        mime='image/png' if ext.endswith('.png') else 'image/jpeg' if ext.endswith(('.jpg','.jpeg')) else 'image/webp' if ext.endswith('.webp') else 'image/svg+xml'
-        login_logo='data:'+mime+';base64,'+base64.b64encode(b).decode()
-
-    st.markdown("""
-    <style>
-    [data-testid="stHeader"]{background:transparent!important}
-    [data-testid="stToolbar"]{visibility:hidden}
-    .block-container{max-width:100%!important;padding-top:1rem!important;padding-bottom:1rem!important}
-    .login-page{min-height:calc(100vh - 90px);display:flex;align-items:center;justify-content:center;padding:24px 12px 48px}
-    .login-card{width:min(430px,94vw);background:#101614;border:1px solid #2B3732;border-radius:20px;box-shadow:0 18px 45px rgba(0,0,0,.32);padding:30px 30px 26px}
-    .login-logo{height:82px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;overflow:hidden}
-    .login-logo img{max-width:250px;max-height:78px;width:auto;height:auto;object-fit:contain;display:block}
-    .login-brand{text-align:center;font-size:38px;font-weight:900;letter-spacing:-1.5px;color:#F4F5F2}
-    .login-brand span{color:#FFD63B}
-    .login-sub{text-align:center;color:#A9B1AC;font-size:11px;letter-spacing:.25px;margin-top:2px}
-    .login-title{text-align:center;color:#F4F5F2;font-size:19px;font-weight:800;margin-top:16px}
-    .login-form{margin-top:22px}
-    [class*="st-key-login_form"] [data-testid="stForm"]{border:0!important;border-radius:0!important;padding:0!important;background:transparent!important;box-shadow:none!important}
-    [class*="st-key-login_form"] label{font-size:13px!important;font-weight:700!important;color:#F4F5F2!important}
-    [class*="st-key-login_form"] input{height:46px!important;border-radius:10px!important}
-    [class*="st-key-login_form"] [data-testid="stFormSubmitButton"]{margin-top:8px!important}
-    [class*="st-key-login_form"] [data-testid="stFormSubmitButton"] button{height:46px!important;border-radius:10px!important;font-weight:800!important}
-    .login-footer{text-align:center;color:#6F7974;font-size:10px;margin-top:18px}
-    @media (max-width:640px){.login-page{padding:12px 8px 32px}.login-card{padding:24px 20px 22px}.login-logo{height:72px}}
-    </style>
-    """,unsafe_allow_html=True)
-
-    logo_html = (f'<div class="login-logo"><img src="{login_logo}"></div>' if login_logo else '<div class="login-logo"><div class="login-brand">Se<span>tt</span>a</div></div>')
-
-    st.markdown(
-        f'<div class="login-page"><div class="login-card">{logo_html}<div class="login-sub">SISTEMA OPERACIONAL DE ESTOQUE</div><div class="login-title">ACESSO AO SISTEMA</div>',
-        unsafe_allow_html=True
-    )
-
-    with st.container():
-        st.markdown('<div class="login-form">',unsafe_allow_html=True)
-        with st.form('login_form'):
-            email=st.text_input('E-mail',placeholder='seu e-mail')
-            password=st.text_input('Senha',type='password',placeholder='Digite sua senha')
-            submitted=st.form_submit_button('ENTRAR',type='primary',use_container_width=True,icon=':material/login:')
-        st.markdown('</div><div class="login-footer">Acesso autorizado somente para usuários cadastrados.</div></div></div>',unsafe_allow_html=True)
-
-    if submitted:
-        if not email or not password:
-            st.error('Informe o e-mail e a senha.')
-        else:
-            data,err=auth_login(email,password)
-            if err: st.error(err)
-            else:
-                st.session_state.auth_user={'email': data.get('email', email), 'localId': data.get('localId','')}
-                st.session_state.auth_access_token=data.get('idToken','')
-                st.session_state.auth_refresh_token=data.get('refreshToken','')
-                st.rerun()
-
-if not st.session_state.auth_user:
-    render_login()
-    st.stop()
-
 
 def persist_cfg(): save('cfg',cfg)
 def persist_all(): save('inventories',st.session_state.inventories); save('cycles',st.session_state.cycles)
@@ -592,44 +491,323 @@ def render_api_monitor():
 if sync_central_inventory(force=False):
  st.rerun()
 
+st.markdown(
+    """
+<style>
+/* SETTA NFS — INVENTÁRIO ROTATIVO */
+[data-testid="stAppViewContainer"]{background:#f4f7fb!important}
+[data-testid="stHeader"]{background:rgba(255,255,255,.96)!important}
+.block-container{
+  max-width:1780px!important;
+  padding-top:1.25rem!important;
+  padding-left:2.7rem!important;
+  padding-right:2.7rem!important;
+  padding-bottom:3rem!important;
+  width:100%!important;
+}
+section[data-testid="stSidebar"]{
+  background:#fff!important;
+  border-right:1px solid #e8ebf0!important;
+  min-width:336px!important;
+  max-width:336px!important;
+  width:336px!important;
+}
+section[data-testid="stSidebar"] .block-container{
+  padding-top:1.6rem!important;
+  padding-left:1rem!important;
+  padding-right:1rem!important;
+}
+.sidebar-brand{
+  background:#f8fafc!important;
+  border:1px solid #e5e8ee!important;
+  border-radius:12px!important;
+  padding:.9rem 1rem!important;
+  margin:0 0 1.05rem 0!important;
+}
+.sidebar-brand-title{
+  font-size:.92rem!important;
+  font-weight:800!important;
+  color:#111827!important;
+  letter-spacing:-.01em!important;
+  text-transform:uppercase!important;
+}
+.sidebar-brand-sub{
+  margin-top:.18rem!important;
+  font-size:.75rem!important;
+  color:#6b7280!important;
+  text-transform:uppercase!important;
+}
+.sidebar-section-label{
+  margin:.25rem 0 .45rem!important;
+  color:#374151!important;
+  font-size:.76rem!important;
+  font-weight:800!important;
+  text-transform:uppercase!important;
+  letter-spacing:.055em!important;
+}
+.sidebar-info-card{
+  background:#f8fafc!important;
+  border:1px solid #e5e8ee!important;
+  border-radius:10px!important;
+  padding:.75rem .85rem!important;
+  color:#6b7280!important;
+  font-size:.76rem!important;
+  line-height:1.55!important;
+  text-transform:uppercase!important;
+}
+section[data-testid="stSidebar"] div[role="radiogroup"]{
+  display:flex!important;
+  flex-direction:column!important;
+  gap:.34rem!important;
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] label{
+  position:relative!important;
+  width:100%!important;
+  min-height:42px!important;
+  display:flex!important;
+  align-items:center!important;
+  padding:.56rem .72rem .56rem .88rem!important;
+  margin:0!important;
+  border:1px solid transparent!important;
+  border-radius:10px!important;
+  background:transparent!important;
+  cursor:pointer!important;
+  box-sizing:border-box!important;
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] label>div:first-child{
+  position:absolute!important;
+  opacity:0!important;
+  width:0!important;
+  height:0!important;
+  overflow:hidden!important;
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] label p{
+  margin:0!important;
+  font-size:.83rem!important;
+  font-weight:600!important;
+  color:#374151!important;
+  line-height:1.2!important;
+  text-transform:uppercase!important;
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] label:hover{
+  background:#f8fafc!important;
+  border-color:#e5e7eb!important;
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked){
+  background:#111827!important;
+  border-color:#111827!important;
+  box-shadow:0 5px 14px rgba(17,24,39,.14)!important;
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before{
+  content:"";
+  position:absolute;
+  left:.42rem;
+  top:50%;
+  width:4px;
+  height:20px;
+  border-radius:999px;
+  background:#ef4444;
+  transform:translateY(-50%);
+}
+section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p{
+  color:#fff!important;
+  font-weight:700!important;
+}
+.setta-logo-card{
+  width:100%!important;
+  min-height:128px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  background:#fff!important;
+  border:1px solid #e5e8ee!important;
+  border-radius:16px!important;
+  box-shadow:0 4px 14px rgba(24,39,75,.08)!important;
+  box-sizing:border-box!important;
+  margin:0 0 2.55rem 0!important;
+  padding:1.1rem 2rem!important;
+}
+.setta-logo-card img{
+  display:block!important;
+  width:auto!important;
+  height:auto!important;
+  max-width:205px!important;
+  max-height:86px!important;
+  object-fit:contain!important;
+}
+.app-title{
+  margin:0!important;
+  padding:0!important;
+  font-size:2.55rem!important;
+  line-height:1.08!important;
+  font-weight:800!important;
+  letter-spacing:-.04em!important;
+  color:#050505!important;
+  text-transform:uppercase!important;
+}
+.app-sub{
+  margin-top:.72rem!important;
+  margin-bottom:1.65rem!important;
+  color:#4f5661!important;
+  font-size:.94rem!important;
+  line-height:1.35!important;
+  text-transform:uppercase!important;
+}
+.section-band{
+  margin:1.25rem 0 .95rem!important;
+  padding:.82rem 1rem!important;
+  background:#fff!important;
+  border:1px solid #e5e8ee!important;
+  border-left:5px solid #111827!important;
+  border-radius:12px!important;
+  box-shadow:0 3px 12px rgba(15,23,42,.035)!important;
+}
+.section-band-kicker{
+  font-size:.66rem!important;
+  font-weight:900!important;
+  letter-spacing:.085em!important;
+  text-transform:uppercase!important;
+  color:#ef4444!important;
+  margin-bottom:.18rem!important;
+}
+.section-band-title{
+  font-size:1.08rem!important;
+  font-weight:900!important;
+  color:#111827!important;
+  letter-spacing:-.015em!important;
+  line-height:1.2!important;
+  text-transform:uppercase!important;
+}
+.section-band-note{
+  margin-top:.22rem!important;
+  color:#667085!important;
+  font-size:.75rem!important;
+}
+.topic-divider{
+  height:1px!important;
+  background:#cbd5e1!important;
+  margin:1.55rem 0 1.05rem!important;
+  width:100%!important;
+}
+[data-testid="stMetric"]{
+  background:#fff!important;
+  border:1px solid #e2e8f0!important;
+  border-radius:14px!important;
+  box-shadow:0 4px 16px rgba(15,23,42,.055)!important;
+  padding:1rem 1rem .9rem!important;
+  min-height:112px!important;
+  position:relative!important;
+  overflow:hidden!important;
+}
+[data-testid="stMetric"]::before{
+  content:"";
+  position:absolute;
+  left:0;top:0;bottom:0;width:5px;
+  background:#111827;
+}
+[data-testid="stMetricLabel"] p{
+  text-transform:uppercase!important;
+  font-size:.72rem!important;
+  font-weight:900!important;
+  letter-spacing:.025em!important;
+  color:#475569!important;
+}
+[data-testid="stDataFrame"],[data-testid="stDataEditor"]{
+  border:1px solid #dfe3e8!important;
+  border-radius:14px!important;
+  overflow:hidden!important;
+  box-shadow:0 4px 16px rgba(15,23,42,.045)!important;
+  background:#fff!important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]{
+  border-color:#e5e8ee!important;
+  border-radius:14px!important;
+  background:#fff!important;
+  box-shadow:0 3px 12px rgba(15,23,42,.035)!important;
+}
+[data-testid="stTabs"] button{
+  font-weight:800!important;
+  text-transform:uppercase!important;
+  letter-spacing:.015em!important;
+}
+h1,h2,h3,h4,label,[data-testid="stWidgetLabel"] p{
+  text-transform:uppercase!important;
+}
+button[kind="primary"],button[data-testid="stBaseButton-primary"]{
+  background:#111111!important;
+  border-color:#111111!important;
+  color:#fff!important;
+}
+@media(max-width:900px){
+  .block-container{
+    padding-top:1rem!important;
+    padding-left:1rem!important;
+    padding-right:1rem!important;
+    padding-bottom:2rem!important;
+  }
+  section[data-testid="stSidebar"]{
+    min-width:300px!important;
+    max-width:300px!important;
+    width:300px!important;
+  }
+  .setta-logo-card{
+    min-height:105px!important;
+    margin-bottom:1.8rem!important;
+    padding:.9rem 1rem!important;
+  }
+  .setta-logo-card img{
+    max-width:170px!important;
+    max-height:72px!important;
+  }
+  .app-title{font-size:2rem!important}
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 # Sidebar
 with st.sidebar:
- u=logo_uri()
- if u:st.markdown(f'<div class="logo-area"><img src="{u}"></div>',unsafe_allow_html=True)
- else:st.markdown('<div class="logo-area"><div style="color:var(--muted);text-align:center;font-size:11px">LOGO DA EMPRESA<br>Configure em Configurações.</div></div>',unsafe_allow_html=True)
- st.markdown(f'<div class="sidebar-sub">{config["sidebar_subtitle"]}</div>',unsafe_allow_html=True);st.markdown(f'<div class="menu-label">{config["menu_label"]}</div>',unsafe_allow_html=True)
- nav=[('Dashboard',config["dashboard_label"],':material/dashboard:'),('Inventário Rotativo',config["inventory_label"],':material/inventory_2:'),('Banco de Dados',config["database_label"],':material/database:'),('Registro',config["register_label"],':material/history:'),('Configurações',config["settings_label"],':material/settings:')]
- if st.session_state.profile=='Admin': nav.insert(4,('Usuários','USUÁRIOS',':material/manage_accounts:'))
- tops={'Dashboard':cfg['dash_top'],'Inventário Rotativo':cfg['inv_top'],'Banco de Dados':cfg['db_top'],'Registro':cfg['reg_top'],'Configurações':cfg['settings_top'],'Usuários':0}
- for k,l,ic in nav:
-  off=tops.get(k,0)
-  st.markdown(f'<div style="height:0;margin-top:{off}px"></div>',unsafe_allow_html=True)
-  if st.button(l,key='nav_'+k,icon=ic,icon_position='left',type='primary' if st.session_state.section==k else 'secondary'):st.session_state.section=k;st.rerun()
- st.markdown('<div class="sidebar-report-area">',unsafe_allow_html=True)
- if st.button(config["report_label"],key='nav_Reportar Inconsistências',icon=':material/report_problem:',icon_position='left',type='primary' if st.session_state.section=='Reportar Inconsistências' else 'secondary'):
-  st.session_state.section='Reportar Inconsistências';st.rerun()
- st.markdown('</div>',unsafe_allow_html=True)
- st.markdown('<div class="sidebar-user-area">',unsafe_allow_html=True)
- _uemail=str(st.session_state.auth_user.get('email',''))
- st.caption('ACESSO: '+_uemail)
- if st.button('SAIR',key='logout_btn',icon=':material/logout:',use_container_width=True): auth_logout()
- st.markdown('</div>',unsafe_allow_html=True)
+ st.markdown(
+  '<div class="sidebar-brand"><div class="sidebar-brand-title">INVENTÁRIO ROTATIVO</div><div class="sidebar-brand-sub">CONTROLE OPERACIONAL SETTA</div></div>',
+  unsafe_allow_html=True
+ )
+ st.markdown('<div class="sidebar-section-label">NAVEGAÇÃO</div>',unsafe_allow_html=True)
+ _nav_options=['Dashboard','Inventário Rotativo','Banco de Dados','Registro','Reportar Inconsistências','Configurações']
+ _current=st.session_state.section if st.session_state.section in _nav_options else 'Dashboard'
+ _selected=st.radio(
+  'Página',
+  _nav_options,
+  index=_nav_options.index(_current),
+  label_visibility='collapsed',
+  format_func=lambda item:str(item).upper(),
+  key='main_navigation'
+ )
+ st.session_state.section=_selected
+ st.divider()
+ st.markdown(
+  '<div class="sidebar-info-card"><b>ACESSO</b><br>LIVRE PARA VALIDAÇÃO<br><br><b>CENTRAL DE DADOS</b><br>ANALÍTICO · ENDEREÇO</div>',
+  unsafe_allow_html=True
+ )
+
 
 _main_logo=logo_uri()
-if _main_logo:st.markdown(f'<div class="main-logo-card"><img src="{_main_logo}"></div>',unsafe_allow_html=True)
-st.markdown(f'<div class="main-title">INVENTÁRIO ROTATIVO | SETTA</div><div class="main-subtitle">ACURÁCIA DE ESTOQUE • CONTAGENS • HISTÓRICO</div>',unsafe_allow_html=True)
+_logo_html=(f'<img src="{_main_logo}" alt="SETTA">' if _main_logo else '<div style="font-size:2rem;font-weight:800;color:#202124">SETTA</div>')
+st.markdown(f'<div class="setta-logo-card">{_logo_html}</div>',unsafe_allow_html=True)
+st.markdown('<h1 class="app-title">INVENTÁRIO ROTATIVO | SETTA</h1>',unsafe_allow_html=True)
+st.markdown('<p class="app-sub">ACURÁCIA DE ESTOQUE • CONTAGENS • HISTÓRICO</p>',unsafe_allow_html=True)
 active=st.session_state.section
 
 # Dashboard
 if active=='Dashboard':
- st.subheader(config['dashboard_title']);st.caption('Visão geral dos indicadores do estoque.')
+ section_band('01 · VISÃO GERAL','INDICADORES DO ESTOQUE')
  if st.session_state.db is None:st.info('Importe e processe os relatórios na aba Banco de Dados.')
  else:
   db=st.session_state.db;items=int((db.saldo_apto>0).sum());valor_apto=float(db.valor_total.sum());rr=[r for x in st.session_state.inventories.values() for r in x['rows']];cnt=[r for r in rr if r['contagens']];div=[r for r in cnt if abs(diff(r,last(r)))>1e-9]
   qtd_cnt=len(cnt);qtd_div=len(div);acc_itens=(100-(qtd_div/items*100)) if items else 100.0;acc_pos=(100-(qtd_div/qtd_cnt*100)) if qtd_cnt else 100.0
   a,b,c,d=st.columns(4);a.metric('ITENS DIFERENTES COM SALDO',f'{items:,}'.replace(',','.'));b.metric('VALOR TOTAL APTO A CONTABILIZAR',brl(valor_apto));c.metric('POSIÇÕES CONTABILIZADAS',f'{qtd_cnt:,}'.replace(',','.'));d.metric('POSIÇÕES DIVERGENTES',f'{qtd_div:,}'.replace(',','.'))
   a,b=st.columns(2);a.metric('ACURÁCIA · DIVERGENTES / ITENS COM SALDO',f'{acc_itens:.2f}%');b.metric('ACURÁCIA · DIVERGENTES / CONTABILIZADOS',f'{acc_pos:.2f}%')
-  st.markdown('#### Indicadores visuais')
+  topic_divider();section_band('02 · INDICADORES','VISÃO GRÁFICA')
   ch1,ch2=st.columns(2)
   with ch1:
    import altair as alt
@@ -661,7 +839,7 @@ if active=='Dashboard':
 
 # Inventory
 elif active=='Inventário Rotativo':
- st.subheader(config['inventory_title']);st.caption(config['inventory_subtitle'])
+ section_band('01 · INVENTÁRIO','CONTROLE E EXECUÇÃO')
  if st.session_state.db is None:st.info('Primeiro importe e processe a base na aba Banco de Dados.')
  else:
   a,b=st.columns(2);st.session_state.profile=a.radio('Perfil de teste',['Operador','Gestor'],index=0 if st.session_state.profile=='Operador' else 1,horizontal=True)
@@ -783,7 +961,6 @@ elif active=='Inventário Rotativo':
 # Database
 elif active=='Banco de Dados':
  section_band('01 · BASE ATUAL','ANALÍTICO + ENDEREÇO')
- render_api_monitor()
  ensure_central_frames()
 
  if st.session_state.en_df is not None:
@@ -832,7 +1009,7 @@ elif active=='Banco de Dados':
 
 # Register
 elif active=='Registro':
- st.subheader(config['register_title']);st.caption(config['register_subtitle']);rows=[]
+ section_band('01 · REGISTRO','HISTÓRICO DE INVENTÁRIOS');rows=[]
  for inv in st.session_state.inventories.values():
   if inv['status']!='FECHADO':continue
   for r in inv['rows']:
@@ -843,7 +1020,7 @@ elif active=='Registro':
 
 # Reportar Inconsistências
 elif active=='Reportar Inconsistências':
- st.subheader('Reportar Inconsistências');st.caption('Abertura e acompanhamento de inconsistências operacionais. O reporte de estoque será direcionado ao Inventário Rotativo.')
+ section_band('01 · INCONSISTÊNCIAS','REGISTRO E ACOMPANHAMENTO')
  if st.session_state.db is None:
   st.warning('Primeiro importe e processe a base na aba Banco de Dados.')
  else:
@@ -898,54 +1075,6 @@ elif active=='Reportar Inconsistências':
      st.success(f'TRATADO NO INVENTÁRIO: {r.get("inventario_doc") or "—"}')
 
 # User administration
-elif active=='Usuários' and st.session_state.profile=='Admin':
- st.subheader('Usuários');st.caption('Cadastro e controle de acesso dos usuários do sistema.')
- db_admin=firebase_db()
- if db_admin is None:
-  st.error('Não foi possível acessar o Firestore. Verifique os Secrets do Firebase Admin.')
- else:
-  with st.expander('NOVO USUÁRIO',True):
-   with st.form('new_user_form'):
-    c1,c2=st.columns(2)
-    with c1: new_email=st.text_input('E-mail',placeholder='usuario@empresa.com')
-    with c2: new_name=st.text_input('Nome',placeholder='Nome do usuário')
-    c3,c4=st.columns(2)
-    with c3: new_password=st.text_input('Senha inicial',type='password',placeholder='mínimo 6 caracteres')
-    with c4: new_role=st.selectbox('Perfil',['OPERADOR','GESTOR','ADMIN'])
-    create_user=st.form_submit_button('CRIAR USUÁRIO',type='primary',icon=':material/person_add:')
-   if create_user:
-    em=(new_email or '').strip().lower(); nm=(new_name or '').strip()
-    try:
-     if not em or not new_password or len(new_password)<6: st.error('Informe e-mail e senha com pelo menos 6 caracteres.')
-     else:
-      u=firebase_auth.create_user(email=em,password=new_password,display_name=nm or em.split('@')[0])
-      db_admin.collection('usuarios').document(u.uid).set({'email':em,'nome':nm or em.split('@')[0],'perfil':new_role,'ativo':True,'criado_em':firestore.SERVER_TIMESTAMP})
-      st.success('Usuário criado com sucesso.'); st.rerun()
-    except Exception as e:
-     msg=str(e)
-     if 'EMAIL_EXISTS' in msg or 'already exists' in msg.lower(): msg='Este e-mail já está cadastrado.'
-     st.error('Não foi possível criar o usuário: '+msg)
-  st.markdown('### USUÁRIOS CADASTRADOS')
-  try:
-   users=list(firebase_auth.list_users().iterate_all())
-  except Exception as e:
-   st.error('Não foi possível listar os usuários: '+str(e)); users=[]
-  for u in users:
-   snap=db_admin.collection('usuarios').document(u.uid).get(); d=snap.to_dict() if snap.exists else {}
-   with st.container(border=True):
-    a,b,c,dcol=st.columns([2.3,1.4,1.1,1.0])
-    with a: st.write('**'+(d.get('nome') or u.display_name or 'Sem nome')+'**'); st.caption(u.email or '')
-    roles=['OPERADOR','GESTOR','ADMIN']; current=str(d.get('perfil','OPERADOR')).upper(); current=current if current in roles else 'OPERADOR'
-    with b: role=st.selectbox('Perfil',roles,index=roles.index(current),key='role_'+u.uid)
-    with c: active_user=st.checkbox('Ativo',value=not u.disabled,key='active_'+u.uid)
-    with dcol:
-     if st.button('SALVAR',key='save_'+u.uid,icon=':material/save:'):
-      try:
-       firebase_auth.update_user(u.uid,disabled=not active_user)
-       db_admin.collection('usuarios').document(u.uid).set({'perfil':role,'ativo':active_user,'email':u.email or '','nome':d.get('nome') or u.display_name or '','atualizado_em':firestore.SERVER_TIMESTAMP},merge=True)
-       st.success('Atualizado.'); st.rerun()
-      except Exception as e: st.error('Erro ao atualizar: '+str(e))
-
 # Settings
 elif active=='Configurações':
  tab_inv,tab_api=st.tabs(['INVENTÁRIO','ACOMPANHAMENTO DE API'])
