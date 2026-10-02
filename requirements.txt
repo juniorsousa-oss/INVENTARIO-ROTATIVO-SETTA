@@ -6,3 +6,4 @@ firebase-admin>=6.5
 
 requests>=2.32,<3
 Pillow>=10,<12
+# deploy-refresh 2026-10-02-1109
