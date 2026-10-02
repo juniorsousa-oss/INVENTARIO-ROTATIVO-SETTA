@@ -584,10 +584,10 @@ if active=='Dashboard':
   db=st.session_state.db;items=int((db.saldo_apto>0).sum());valor_apto=float(db.valor_total.sum());rr=[r for x in st.session_state.inventories.values() for r in x['rows']];cnt=[r for r in rr if r['contagens']];div=[r for r in cnt if abs(diff(r,last(r)))>1e-9]
   qtd_cnt=len(cnt);qtd_div=len(div);acc_itens=(100-(qtd_div/items*100)) if items else 100.0;acc_pos=(100-(qtd_div/qtd_cnt*100)) if qtd_cnt else 100.0
   a,b,c,d=st.columns(4)
-  setta_kpi(a,'ITENS DIFERENTES COM SALDO',f'{items:,}'.replace(','.'),'BASE APTA','#2563eb','#dbeafe')
+  setta_kpi(a,'ITENS DIFERENTES COM SALDO',f'{items:,}'.replace(',','.'),'BASE APTA','#2563eb','#dbeafe')
   setta_kpi(b,'VALOR TOTAL APTO A CONTABILIZAR',brl(valor_apto),'VALOR DO ESTOQUE','#0891b2','#cffafe')
-  setta_kpi(c,'POSIÇÕES CONTABILIZADAS',f'{qtd_cnt:,}'.replace(','.'),'CONTAGENS REGISTRADAS','#16a34a','#dcfce7')
-  setta_kpi(d,'POSIÇÕES DIVERGENTES',f'{qtd_div:,}'.replace(','.'),'EXIGEM TRATATIVA','#ef4444','#fee2e2')
+  setta_kpi(c,'POSIÇÕES CONTABILIZADAS',f'{qtd_cnt:,}'.replace(',','.'),'CONTAGENS REGISTRADAS','#16a34a','#dcfce7')
+  setta_kpi(d,'POSIÇÕES DIVERGENTES',f'{qtd_div:,}'.replace(',','.'),'EXIGEM TRATATIVA','#ef4444','#fee2e2')
   a,b=st.columns(2)
   setta_kpi(a,'ACURÁCIA · DIVERGENTES / ITENS COM SALDO',f'{acc_itens:.2f}%','ÍNDICE GERAL','#7c3aed','#ede9fe')
   setta_kpi(b,'ACURÁCIA · DIVERGENTES / CONTABILIZADOS',f'{acc_pos:.2f}%','ÍNDICE CONTABILIZADO','#d97706','#ffedd5')
