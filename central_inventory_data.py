@@ -136,7 +136,17 @@ def commit_sync(
 
 @st.cache_data(show_spinner=False, ttl=60, max_entries=2)
 def load_visual_config() -> dict:
-    row = api_call("visual_get", {"app_key": "setta_global"}, timeout=30).get("data") or {}
+    # A identidade visual é opcional. Se a API estiver indisponível ou a ação
+    # visual_get ainda não estiver publicada, o aplicativo deve continuar
+    # funcionando com o logo/configuração local em vez de cair na inicialização.
+    try:
+        row = api_call(
+            "visual_get",
+            {"app_key": "setta_global"},
+            timeout=30,
+        ).get("data") or {}
+    except Exception:
+        row = {}
     return {
         "logo_data": row.get("logo_data") or "",
         "logo_mime": row.get("logo_mime") or "image/png",
@@ -146,7 +156,9 @@ def load_visual_config() -> dict:
 
 
 def logo_data_uri(config: dict | None = None) -> str:
-    cfg = config or load_visual_config()
+    # Um dict vazio é uma configuração válida de fallback. Não repetir a
+    # chamada remota quando o carregamento inicial já falhou.
+    cfg = config if config is not None else load_visual_config()
     raw = str(cfg.get("logo_data") or "").strip()
     if not raw:
         return ""
@@ -155,7 +167,7 @@ def logo_data_uri(config: dict | None = None) -> str:
 
 
 def favicon_bytes(config: dict | None = None) -> bytes:
-    cfg = config or load_visual_config()
+    cfg = config if config is not None else load_visual_config()
     raw = str(cfg.get("favicon_data") or "").strip()
     if not raw:
         return b""
