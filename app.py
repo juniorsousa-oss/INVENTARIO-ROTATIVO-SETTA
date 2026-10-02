@@ -226,7 +226,13 @@ def signed_brl(v):
  return ('+' if x>0 else '-')+brl(abs(x))
 
 def logo_uri():
- global_logo=central_data.logo_data_uri(_GLOBAL_VISUAL_CONFIG)
+ # A identidade visual central nunca pode impedir a inicialização do app.
+ # Mesmo que o deploy esteja com uma versão antiga de central_inventory_data,
+ # qualquer 401/indisponibilidade da API cai para a logo local.
+ try:
+  global_logo=central_data.logo_data_uri(_GLOBAL_VISUAL_CONFIG)
+ except Exception:
+  global_logo=''
  if global_logo:return global_logo
  b,n=st.session_state.logo
  if not b:return None
