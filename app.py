@@ -151,7 +151,29 @@ def firestore_load_eligible():
         return None
 
 
-if 'cfg' not in st.session_state: st.session_state.cfg={**DEFAULT,**(load('cfg',{}) or {})}
+_remote_operational_state={}
+if any(
+ key not in st.session_state
+ for key in ('cfg','inventories','cycles','reports')
+):
+ try:
+  _remote_operational_state=central_data.operational_state(
+   ['cfg','inventories','cycles','reports']
+  )
+  st.session_state.pop('_operational_persistence_error',None)
+ except Exception as exc:
+  _remote_operational_state={}
+  st.session_state['_operational_persistence_error']=str(exc)
+
+def _initial_operational_value(key,default):
+ if key in _remote_operational_state:
+  value=_remote_operational_state.get(key)
+  return value if value is not None else default
+ return load(key,default)
+
+if 'cfg' not in st.session_state:
+ _saved_cfg=_initial_operational_value('cfg',{}) or {}
+ st.session_state.cfg={**DEFAULT,**(_saved_cfg if isinstance(_saved_cfg,dict) else {})}
 if 'logo' not in st.session_state: st.session_state.logo=load('logo',(None,''))
 if 'db' not in st.session_state:
  _fsdb=firestore_load_db(); st.session_state.db=_fsdb if _fsdb is not None else load('db')
@@ -159,17 +181,39 @@ if 'pos' not in st.session_state:
  _fspos=firestore_load_pos(); st.session_state.pos=_fspos if _fspos is not None else load('pos')
 if 'eligible' not in st.session_state:
  _fselig=firestore_load_eligible(); st.session_state.eligible=_fselig if _fselig is not None else (load('eligible',[]) or [])
-if 'inventories' not in st.session_state: st.session_state.inventories=load('inventories',{}) or {}
-if 'cycles' not in st.session_state: st.session_state.cycles=load('cycles',{}) or {}
+if 'inventories' not in st.session_state:
+ _saved_inventories=_initial_operational_value('inventories',{}) or {}
+ st.session_state.inventories=_saved_inventories if isinstance(_saved_inventories,dict) else {}
+if 'cycles' not in st.session_state:
+ _saved_cycles=_initial_operational_value('cycles',{}) or {}
+ st.session_state.cycles=_saved_cycles if isinstance(_saved_cycles,dict) else {}
 if 'section' not in st.session_state: st.session_state.section='Dashboard'
 if 'selected' not in st.session_state: st.session_state.selected=None
 if 'new_inv' not in st.session_state: st.session_state.new_inv=False
 if 'profile' not in st.session_state: st.session_state.profile='Operador'
-if 'reports' not in st.session_state: st.session_state.reports=load('reports',{}) or {}
+if 'reports' not in st.session_state:
+ _saved_reports=_initial_operational_value('reports',{}) or {}
+ st.session_state.reports=_saved_reports if isinstance(_saved_reports,dict) else {}
 
 if st.session_state.profile not in ('Operador','Gestor'): st.session_state.profile='Operador'
 cfg=st.session_state.cfg
 config=cfg
+
+# Migração transparente do estado local antigo para o Supabase.
+# Executa uma vez por sessão e somente para chaves que ainda não existem remotamente.
+if not st.session_state.get('_operational_state_migration_checked'):
+ for _state_key,_state_value in (
+  ('cfg',st.session_state.cfg),
+  ('inventories',st.session_state.inventories),
+  ('cycles',st.session_state.cycles),
+  ('reports',st.session_state.reports),
+ ):
+  if _state_key not in _remote_operational_state and _state_value:
+   try:
+    central_data.save_operational_state(_state_key,_state_value)
+   except Exception as exc:
+    st.session_state['_operational_persistence_error']=str(exc)
+ st.session_state['_operational_state_migration_checked']=True
 
 # Compatibility defaults: preserve older saved settings while supporting the V5 UI keys.
 _cfg_defaults = {
@@ -190,8 +234,23 @@ for _k, _v in _cfg_defaults.items():
 
 # ACESSO DIRETO — SEM LOGIN, SENHA OU BLOQUEIO DE AUTENTICAÇÃO NESTA ETAPA.
 AUTH_REQUIRED = False
-def persist_cfg(): save('cfg',cfg)
-def persist_all(): save('inventories',st.session_state.inventories); save('cycles',st.session_state.cycles)
+def _persist_operational(key,value):
+ # Supabase é a persistência principal. SQLite fica apenas como contingência
+ # local caso a Central esteja temporariamente indisponível.
+ save(key,value)
+ try:
+  central_data.save_operational_state(key,value)
+  st.session_state.pop('_operational_persistence_error',None)
+  return True
+ except Exception as exc:
+  st.session_state['_operational_persistence_error']=str(exc)
+  return False
+
+def persist_cfg(): _persist_operational('cfg',cfg)
+def persist_all():
+ _persist_operational('inventories',st.session_state.inventories)
+ _persist_operational('cycles',st.session_state.cycles)
+
 def persist_eligible():
  db=firebase_db()
  if db is not None:
@@ -213,7 +272,7 @@ def persist_db():
   except Exception:
    pass
  save('db',st.session_state.db); save('pos',st.session_state.pos); save('eligible',st.session_state.eligible)
-def persist_reports(): save('reports',st.session_state.reports)
+def persist_reports(): _persist_operational('reports',st.session_state.reports)
 
 def excel_bytes(df, sheet_name):
  out=io.BytesIO()
@@ -527,7 +586,7 @@ def make_rows(sel,pos):
   for _,r in pos[(pos.codigo==p.codigo)&pos.apto].iterrows():
    rows.append({'id':uuid.uuid4().hex[:12],'codigo':str(p.codigo),'descricao':str(p.descricao),'endereco':str(r.endereco),'qtd_sistema':float(r.quantidade),'valor_unitario':float(p.valor_unitario),'contagens':[],'status':'PENDENTE','contagem_final':None,'resultado_final':'','comentario_final':'SC'})
  return rows
-def persist_inv(inv):st.session_state.inventories[inv['documento']]=inv;save('inventories',st.session_state.inventories)
+def persist_inv(inv):st.session_state.inventories[inv['documento']]=inv;_persist_operational('inventories',st.session_state.inventories)
 def addcount(r,q,cm,stage):r['contagens'].append({'etapa':stage,'quantidade':float(q),'comentario':cm.strip() if cm.strip() else 'SC','data':datetime.now().strftime('%d/%m/%Y %H:%M:%S')})
 def last(r):return r['contagens'][-1]['quantidade'] if r['contagens'] else None
 def diff(r,q):return float(q)-float(r['qtd_sistema'])
@@ -537,7 +596,7 @@ def sev(v):return 'BAIXO' if v<=100 else 'MÉDIO' if v<=1000 else 'ALTO'
 def mark_cycle(inv):
  if inv.get('ciclo_marcado'):return
  for c in {r['codigo'] for r in inv['rows'] if r['contagens']}:st.session_state.cycles[c]=int(st.session_state.cycles.get(c,0))+1
- inv['ciclo_marcado']=True;save('cycles',st.session_state.cycles);persist_inv(inv)
+ inv['ciclo_marcado']=True;_persist_operational('cycles',st.session_state.cycles);persist_inv(inv)
 def close_inv(inv):
  for r in inv['rows']:
   if r['contagem_final'] is None:r['contagem_final']=last(r)
