@@ -268,6 +268,33 @@ def setta_kpi(col,label,value,delta='',accent='#111827',soft='#f3f4f6'):
   unsafe_allow_html=True
  )
 
+def dashboard_kpi_grid(items,valor_apto,qtd_cnt,qtd_div,acc_itens,acc_pos):
+ cards=[
+  ('blue','ITENS DIFERENTES COM SALDO',f'{items:,}'.replace(',','.'),'BASE APTA','ESTOQUE'),
+  ('cyan','VALOR TOTAL APTO A CONTABILIZAR',brl(valor_apto),'VALOR DO ESTOQUE','FINANCEIRO'),
+  ('green','POSIÇÕES CONTABILIZADAS',f'{qtd_cnt:,}'.replace(',','.'),'CONTAGENS REGISTRADAS','CONTAGEM'),
+  ('red','POSIÇÕES DIVERGENTES',f'{qtd_div:,}'.replace(',','.'),'EXIGEM TRATATIVA','DIVERGÊNCIA'),
+  ('violet','ACURÁCIA · ITENS COM SALDO',f'{acc_itens:.2f}%','ÍNDICE GERAL','ACURÁCIA'),
+  ('amber','ACURÁCIA · POSIÇÕES CONTABILIZADAS',f'{acc_pos:.2f}%','ÍNDICE CONTABILIZADO','ACURÁCIA'),
+ ]
+ html=['<div class="dashboard-kpi-grid">']
+ for tone,label,value,caption,eyebrow in cards:
+  progress=''
+  if tone in ('violet','amber'):
+   pct=max(0.0,min(100.0,float(acc_itens if tone=='violet' else acc_pos)))
+   progress=f'<div class="dashboard-kpi-progress"><span style="width:{pct:.2f}%"></span></div>'
+  html.append(
+   f'<div class="dashboard-kpi dashboard-kpi--{tone}">'
+   f'<div class="dashboard-kpi-top"><span class="dashboard-kpi-eyebrow">{eyebrow}</span><span class="dashboard-kpi-status-dot"></span></div>'
+   f'<div class="dashboard-kpi-label">{label}</div>'
+   f'<div class="dashboard-kpi-value">{value}</div>'
+   f'{progress}'
+   f'<div class="dashboard-kpi-caption">{caption}</div>'
+   f'</div>'
+  )
+ html.append('</div>')
+ st.markdown(''.join(html),unsafe_allow_html=True)
+
 def css():
  return None
 
@@ -352,6 +379,20 @@ section[data-testid="stSidebar"] hr{margin:.85rem 0!important}
 [data-testid="stTabs"] button{font-weight:800!important;text-transform:uppercase!important;letter-spacing:.015em!important}
 .kpi-label{text-transform:uppercase;font-size:.72rem!important;font-weight:900!important;letter-spacing:.025em}
 .kpi-delta{text-transform:uppercase;font-size:.66rem!important;font-weight:700!important;letter-spacing:.02em}
+.dashboard-kpi-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.85rem;margin:.15rem 0 .25rem}
+.dashboard-kpi{--kpi-accent:#2563eb;--kpi-soft:#eff6ff;position:relative;min-width:0;min-height:142px;padding:1rem 1.05rem .9rem;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 5px 18px rgba(15,23,42,.055);overflow:hidden;display:flex;flex-direction:column}
+.dashboard-kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--kpi-accent)}
+.dashboard-kpi--blue{--kpi-accent:#2563eb;--kpi-soft:#dbeafe}.dashboard-kpi--cyan{--kpi-accent:#0891b2;--kpi-soft:#cffafe}.dashboard-kpi--green{--kpi-accent:#16a34a;--kpi-soft:#dcfce7}.dashboard-kpi--red{--kpi-accent:#ef4444;--kpi-soft:#fee2e2}.dashboard-kpi--violet{--kpi-accent:#7c3aed;--kpi-soft:#ede9fe}.dashboard-kpi--amber{--kpi-accent:#d97706;--kpi-soft:#ffedd5}
+.dashboard-kpi-top{display:flex;align-items:center;justify-content:space-between;gap:.7rem;margin-bottom:.48rem}
+.dashboard-kpi-eyebrow{color:#64748b;font-size:.59rem;font-weight:900;letter-spacing:.085em;text-transform:uppercase}
+.dashboard-kpi-status-dot{width:9px;height:9px;border-radius:999px;background:var(--kpi-accent);box-shadow:0 0 0 4px var(--kpi-soft);flex:0 0 auto}
+.dashboard-kpi-label{min-height:2.15em;color:#475569;font-size:.72rem;font-weight:850;line-height:1.18;letter-spacing:.015em;text-transform:uppercase}
+.dashboard-kpi-value{margin:.38rem 0 0;color:#0f172a;font-size:clamp(1.65rem,2vw,2.15rem);font-weight:850;line-height:1;letter-spacing:-.045em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dashboard-kpi-caption{margin-top:auto;padding-top:.65rem;color:#718096;font-size:.62rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.dashboard-kpi-progress{height:6px;margin:.62rem 0 0;background:#eef2f7;border-radius:999px;overflow:hidden}
+.dashboard-kpi-progress span{display:block;height:100%;border-radius:999px;background:var(--kpi-accent)}
+@media(max-width:1100px){.dashboard-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.dashboard-kpi-grid{grid-template-columns:1fr;gap:.65rem}.dashboard-kpi{min-height:126px;padding:.9rem}.dashboard-kpi-label{min-height:0}.dashboard-kpi-value{font-size:1.75rem}}
 div[data-testid="stMarkdownContainer"] h1,
 div[data-testid="stMarkdownContainer"] h2,
 div[data-testid="stMarkdownContainer"] h3,
@@ -598,14 +639,7 @@ if active=='Dashboard':
  else:
   db=st.session_state.db;items=int((db.saldo_apto>0).sum());valor_apto=float(db.valor_total.sum());rr=[r for x in st.session_state.inventories.values() for r in x['rows']];cnt=[r for r in rr if r['contagens']];div=[r for r in cnt if abs(diff(r,last(r)))>1e-9]
   qtd_cnt=len(cnt);qtd_div=len(div);acc_itens=(100-(qtd_div/items*100)) if items else 100.0;acc_pos=(100-(qtd_div/qtd_cnt*100)) if qtd_cnt else 100.0
-  a,b,c,d=st.columns(4)
-  setta_kpi(a,'ITENS DIFERENTES COM SALDO',f'{items:,}'.replace(',','.'),'BASE APTA','#2563eb','#dbeafe')
-  setta_kpi(b,'VALOR TOTAL APTO A CONTABILIZAR',brl(valor_apto),'VALOR DO ESTOQUE','#0891b2','#cffafe')
-  setta_kpi(c,'POSIÇÕES CONTABILIZADAS',f'{qtd_cnt:,}'.replace(',','.'),'CONTAGENS REGISTRADAS','#16a34a','#dcfce7')
-  setta_kpi(d,'POSIÇÕES DIVERGENTES',f'{qtd_div:,}'.replace(',','.'),'EXIGEM TRATATIVA','#ef4444','#fee2e2')
-  a,b=st.columns(2)
-  setta_kpi(a,'ACURÁCIA · DIVERGENTES / ITENS COM SALDO',f'{acc_itens:.2f}%','ÍNDICE GERAL','#7c3aed','#ede9fe')
-  setta_kpi(b,'ACURÁCIA · DIVERGENTES / CONTABILIZADOS',f'{acc_pos:.2f}%','ÍNDICE CONTABILIZADO','#d97706','#ffedd5')
+  dashboard_kpi_grid(items,valor_apto,qtd_cnt,qtd_div,acc_itens,acc_pos)
   topic_divider();section_band('02 · INDICADORES','VISÃO GRÁFICA')
   ch1,ch2=st.columns(2)
   with ch1:
