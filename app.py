@@ -808,7 +808,7 @@ elif active=='Banco de Dados':
    _saldo=float(pd.to_numeric(_treated.get('SALDO_DISPONIVEL',pd.Series(dtype=float)),errors='coerce').fillna(0).sum()) if not _treated.empty else 0.0
    setta_kpi(b,'SALDO DISPONÍVEL',fn(_saldo),'SOMA DA BASE TRATADA','#16a34a','#dcfce7')
    _versao=int(_treated_meta.get('version') or 0)
-   setta_kpi(c,'VERSÃO',f'V{_versao}',_when,'CENTRAL DE DADOS','#7c3aed','#ede9fe')
+   setta_kpi(c,'VERSÃO',f'V{_versao}',f'CENTRAL DE DADOS · {_when}','#7c3aed','#ede9fe')
    topic_divider()
    section_band('02 · RELATÓRIO','ESTOQUE TRATADO')
    _view=_treated.copy()
