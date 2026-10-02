@@ -626,8 +626,8 @@ def _central_frames():
   meta=bundle.get(key) or {}
   if not bool(meta.get('available')):raise RuntimeError(f'FONTE {key.upper()} NÃO DISPONÍVEL NA CENTRAL.')
   token=central_data.source_token(meta)
-  raw,remote=central_data.download_source(key,token)
-  frames[key]=readxls(io.BytesIO(raw))
+  frame,remote=central_data.download_source_frame(key,token,header=1)
+  frames[key]=frame
   metas[key]=meta
  return frames,metas
 
