@@ -347,6 +347,9 @@ section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[d
 .sidebar-status-card{background:#f8fafc;border:1px solid #e5e8ee;border-radius:10px;padding:.75rem .85rem;color:#6b7280;font-size:.72rem;line-height:1.5}
 .sidebar-status-name{font-size:.68rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.025em}
 .sidebar-status-value{margin-top:.16rem;font-size:.8rem;font-weight:900;color:#111827;text-transform:uppercase}
+.sidebar-status-value.status-ok{color:#16a34a!important}
+.sidebar-status-value.status-warning{color:#f59e0b!important}
+.sidebar-status-value.status-error{color:#ef4444!important}
 .sidebar-status-meta{margin-top:.24rem;color:#6b7280;font-size:.66rem;line-height:1.45;text-transform:uppercase}
 section[data-testid="stSidebar"] hr{margin:.85rem 0!important}
 
@@ -670,10 +673,54 @@ with st.sidebar:
   '<div class="sidebar-status-spacer"></div><div class="sidebar-section-label">STATUS GERAL</div>',
   unsafe_allow_html=True
  )
- _sidebar_value='ATUALIZADO' if st.session_state.db is not None else 'AGUARDANDO'
- _sidebar_meta='BASE DE ESTOQUE CARREGADA' if st.session_state.db is not None else 'AGUARDANDO SINCRONIZAÇÃO'
+ try:
+  _sidebar_bundle=central_data.bundle_state()
+  _sidebar_states=central_data.sync_state()
+ except Exception:
+  _sidebar_bundle={}
+  _sidebar_states={}
+
+ _sidebar_docs_total=2
+ _sidebar_docs_ok=0
+ _sidebar_has_error=False
+ _sidebar_latest=None
+
+ for _source_key in ('analitico','endereco'):
+  _meta=_sidebar_bundle.get(_source_key) or {}
+  _state=_sidebar_states.get(_source_key) or {}
+  _state_status=str(_state.get('status') or '').upper()
+  if bool(_meta.get('available')) and _state_status=='ATUALIZADO':
+   _sidebar_docs_ok+=1
+  if _state_status=='ERRO':
+   _sidebar_has_error=True
+  _raw_when=str(_state.get('synced_at') or _meta.get('last_update_at') or '').strip()
+  if _raw_when:
+   _stamp=pd.to_datetime(_raw_when,errors='coerce',utc=True)
+   if not pd.isna(_stamp) and (_sidebar_latest is None or _stamp>_sidebar_latest):
+    _sidebar_latest=_stamp
+
+ _sidebar_last_update=(
+  central_data.format_dt(_sidebar_latest.isoformat())
+  if _sidebar_latest is not None
+  else '—'
+ )
+
+ if _sidebar_has_error:
+  _sidebar_value='ERRO'
+  _sidebar_status_class='status-error'
+ elif _sidebar_docs_ok==_sidebar_docs_total:
+  _sidebar_value='ATUALIZADO'
+  _sidebar_status_class='status-ok'
+ else:
+  _sidebar_value='ATENÇÃO'
+  _sidebar_status_class='status-warning'
+
+ _sidebar_meta=(
+  f'<div>ÚLTIMA ATUALIZAÇÃO: {_sidebar_last_update}</div>'
+  f'<div>QNT DE DOCUMENTOS: {_sidebar_docs_ok}/{_sidebar_docs_total}</div>'
+ )
  st.markdown(
-  f'<div class="sidebar-status-card"><div class="sidebar-status-name">GESTÃO DE ESTOQUE</div><div class="sidebar-status-value">{_sidebar_value}</div><div class="sidebar-status-meta">{_sidebar_meta}</div></div>',
+  f'<div class="sidebar-status-card"><div class="sidebar-status-name">GESTÃO DE ESTOQUE</div><div class="sidebar-status-value {_sidebar_status_class}">{_sidebar_value}</div><div class="sidebar-status-meta">{_sidebar_meta}</div></div>',
   unsafe_allow_html=True
  )
 
