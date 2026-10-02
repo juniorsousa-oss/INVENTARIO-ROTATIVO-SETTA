@@ -22,6 +22,7 @@ def _global_page_icon():
  return '📦'
 
 st.set_page_config(page_title='GESTÃO DE ESTOQUE | SETTA', page_icon=_global_page_icon(), layout='wide', initial_sidebar_state='expanded')
+BUILD_DIAGNOSTICO = 'layout-sync-20261002-A'
 DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
@@ -802,6 +803,7 @@ _logo_html=(f'<img src="{_main_logo}" alt="SETTA">' if _main_logo else '<div sty
 st.markdown(f'<div class="setta-logo-card">{_logo_html}</div>',unsafe_allow_html=True)
 st.markdown('<h1 class="app-title">GESTÃO DE ESTOQUE | SETTA</h1>',unsafe_allow_html=True)
 st.markdown('<p class="app-sub">INVENTÁRIO ROTATIVO • ACURÁCIA • CONTAGENS • HISTÓRICO</p>',unsafe_allow_html=True)
+st.caption(f'BUILD DE DIAGNÓSTICO · {BUILD_DIAGNOSTICO}')
 active=st.session_state.section
 
 # Dashboard
