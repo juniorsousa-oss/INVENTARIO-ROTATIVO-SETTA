@@ -10,7 +10,7 @@ import requests
 import streamlit as st
 
 DEFAULT_SUPABASE_URL = "https://cuixazpxkvniqldmmnth.supabase.co"
-DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1aXhhenB4a3ZuaXFsZG1tbnRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1NjA1MywiZXhwIjoyMTAzMDkyMDUzfQ.jNFaIG1FcDYnMAoVaI23UYMuRL1BpZmuqu_LPEYb88E"
+DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1aXhhenB4a3ZuaXFsZG1tbnRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1MTYwNTMsImV4cCI6MjEwMzA5MjA1M30.jNFaIG1FcDYnMAoVaI23UYMuRL1BpZmuqu_LPEYb88E"
 CONSUMER_KEY = "inventario_rotativo"
 TZ = ZoneInfo("America/Sao_Paulo")
 
@@ -36,6 +36,7 @@ def supabase_key() -> str:
     return (
         _secret("SETTA_SUPABASE_ANON_KEY")
         or _secret("SUPABASE_ANON_KEY")
+        or _secret("SUPABASE_KEY")
         or DEFAULT_SUPABASE_ANON_KEY
     )
 
