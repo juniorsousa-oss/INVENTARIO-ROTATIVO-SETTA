@@ -350,13 +350,34 @@ section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[d
 .sidebar-status-meta{margin-top:.24rem;color:#6b7280;font-size:.66rem;line-height:1.45;text-transform:uppercase}
 section[data-testid="stSidebar"] hr{margin:.85rem 0!important}
 
+/* A sidebar ocupa 260 px. O conteúdo principal deve usar somente a área restante
+   da viewport; usar width:100% aqui fazia o app ultrapassar a tela em 260 px. */
+[data-testid="stAppViewContainer"]{
+  overflow-x:hidden!important;
+}
 [data-testid="stAppViewContainer"] > .main,
 [data-testid="stAppViewContainer"] .main,
 [data-testid="stMain"],
-.stMain{width:100%!important;max-width:100%!important;margin-left:0!important;margin-right:0!important}
+.stMain{
+  width:calc(100vw - 260px)!important;
+  max-width:calc(100vw - 260px)!important;
+  min-width:0!important;
+  flex:1 1 auto!important;
+  margin-left:0!important;
+  margin-right:0!important;
+  overflow-x:hidden!important;
+  box-sizing:border-box!important;
+}
 [data-testid="stAppViewContainer"] .main .block-container,
 [data-testid="stMain"] .block-container,
-.stMain .block-container{width:100%!important;max-width:100%!important;margin-left:0!important;margin-right:0!important}
+.stMain .block-container{
+  width:100%!important;
+  max-width:1780px!important;
+  min-width:0!important;
+  margin-left:0!important;
+  margin-right:0!important;
+  box-sizing:border-box!important;
+}
 section[data-testid="stSidebar"][aria-expanded="false"]{width:0!important;min-width:0!important;max-width:0!important;flex-basis:0!important}
 
 .setta-logo-card{width:100%;min-height:128px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #e5e8ee;border-radius:16px;box-shadow:0 4px 14px rgba(24,39,75,.08);box-sizing:border-box;margin:0 0 2.55rem 0;padding:1.1rem 2rem}
@@ -428,7 +449,12 @@ section[data-testid="stSidebar"][aria-expanded="false"]{
 [data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="false"]) [data-testid="stMain"],
 [data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="false"]) .stMain,
 [data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="false"]) .main{
-  width:100%!important;max-width:100%!important;flex:1 1 100%!important;margin-left:0!important;
+  width:100vw!important;
+  max-width:100vw!important;
+  min-width:0!important;
+  flex:1 1 100%!important;
+  margin-left:0!important;
+  overflow-x:hidden!important;
 }
 </style>
 """,
