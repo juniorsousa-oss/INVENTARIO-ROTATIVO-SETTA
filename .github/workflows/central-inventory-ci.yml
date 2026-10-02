@@ -29,9 +29,12 @@ jobs:
           app = Path("app.py").read_text(encoding="utf-8")
           central = Path("central_inventory_data.py").read_text(encoding="utf-8")
           assert "def sync_central_inventory" in app
-          assert "CONTINGÊNCIA MANUAL" in app
           assert "ACOMPANHAMENTO DE API" in app
-          assert "'analitico','endereco'" in app
+          assert "eligible_addresses_from_frame" in app
+          assert "ESTOQUE_ENDERECOS_NAO_DISPONIVEIS" in app
+          assert "derived_status(['estoque_tratado'])" in app
+          assert "download_derived('estoque_tratado'" in app
+          assert "Cards próprios desta tela: não dependem de setta_kpi()" in app
           assert "AUTH_REQUIRED = False" in app
           assert "signInWithPassword" not in app
           assert "auth_user" not in app
@@ -41,6 +44,8 @@ jobs:
           assert "section-band" in app
           assert "GESTÃO DE ESTOQUE | SETTA" in app
           assert "consumer_sync_status" in central
+          assert "derived_status" in central
+          assert "derived_download" in central
           assert "visual_get" in central
           print("CENTRAL_INVENTARIO_OK")
           PY
