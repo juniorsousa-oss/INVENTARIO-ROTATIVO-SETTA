@@ -86,6 +86,27 @@ def bundle_state() -> dict[str, dict]:
 def source_token(meta: dict) -> str:
     return f"v{int(meta.get('version') or 0)}|{meta.get('last_update_at') or ''}"
 
+def operational_state(keys: list[str] | None = None) -> dict[str, Any]:
+    """Carrega o estado operacional persistente do Inventário no Supabase."""
+    requested = keys or ["cfg", "inventories", "cycles", "reports"]
+    data = api_call(
+        "inventory_state_get",
+        {"keys": requested},
+        timeout=30,
+    ).get("data") or {}
+    state = data.get("state") or {}
+    return state if isinstance(state, dict) else {}
+
+
+def save_operational_state(state_key: str, value: Any) -> dict:
+    """Persiste uma seção do estado operacional via Edge Function."""
+    return api_call(
+        "inventory_state_set",
+        {"state_key": state_key, "value": value},
+        timeout=45,
+    ).get("data") or {}
+
+
 def derived_status(keys: list[str]) -> dict[str, dict]:
     rows = api_call("derived_status", {"keys": keys}, timeout=30).get("data") or []
     return {
