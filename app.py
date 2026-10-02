@@ -785,6 +785,12 @@ with st.sidebar:
 
 
 
+if st.session_state.get('_operational_persistence_error'):
+ st.error(
+  'PERSISTÊNCIA OPERACIONAL INDISPONÍVEL · '
+  + str(st.session_state.get('_operational_persistence_error'))
+ )
+
 _main_logo=logo_uri()
 _logo_html=(f'<img src="{_main_logo}" alt="SETTA">' if _main_logo else '<div style="font-size:2rem;font-weight:800;color:#202124">SETTA</div>')
 st.markdown(f'<div class="setta-logo-card">{_logo_html}</div>',unsafe_allow_html=True)
