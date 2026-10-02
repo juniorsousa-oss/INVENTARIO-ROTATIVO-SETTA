@@ -246,6 +246,14 @@ def section_band(kicker,title,note=''):
 def topic_divider():
  st.markdown('<div class="topic-divider"></div>',unsafe_allow_html=True)
 
+def setta_kpi(col,label,value,delta='',accent='#111827',soft='#f3f4f6'):
+ col.markdown(
+  f'<div class="kpi-card" style="--accent:{accent};--accent-soft:{soft}">'
+  f'<div class="kpi-header"><span class="kpi-dot"></span><span class="kpi-label">{label}</span></div>'
+  f'<div class="kpi-value">{value}</div><div class="kpi-delta">{delta}</div></div>',
+  unsafe_allow_html=True
+ )
+
 def css():
  return None
 
@@ -337,36 +345,6 @@ div[data-testid="stMarkdownContainer"] h4{text-transform:uppercase}
 [data-testid="stAlert"]{border-radius:12px!important;box-shadow:0 3px 12px rgba(15,23,42,.035)}
 button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:var(--p)!important;border-color:var(--p)!important;color:#fff!important}.footer{text-align:center;color:#9298a1;font-size:.72rem;padding-top:1.2rem}
 @media (max-width:900px){.block-container{padding-top:2rem!important;padding-left:1rem!important;padding-right:1rem!important;padding-bottom:2rem!important}.setta-logo-card{min-height:105px;margin-bottom:1.8rem;padding:.9rem 1rem}.setta-logo-card img{max-width:170px;max-height:72px}.app-title{font-size:2rem!important;line-height:1.12!important}.app-sub{font-size:.86rem!important;margin-bottom:1.35rem!important}.section-title{font-size:1.14rem!important}div[data-testid="stHorizontalBlock"]{flex-wrap:wrap!important}div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{min-width:100%!important;width:100%!important;flex:1 1 100%!important}.kpi-card{min-height:112px;margin-bottom:.12rem}.api-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-
-/* INVENTÁRIO — adaptação mínima de componentes nativos ao espelho NFS */
-[data-testid="stMetric"]{
-  position:relative!important;
-  min-height:116px!important;
-  padding:16px 18px 15px!important;
-  border:1px solid #e2e8f0!important;
-  border-radius:14px!important;
-  background:#fff!important;
-  box-shadow:0 4px 16px rgba(15,23,42,.055)!important;
-  overflow:hidden!important;
-}
-[data-testid="stMetric"]::before{
-  content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:#111827;
-}
-[data-testid="stMetricLabel"] p{
-  color:#475569!important;font-size:.72rem!important;font-weight:900!important;
-  letter-spacing:.025em!important;text-transform:uppercase!important;
-}
-[data-testid="stMetricValue"]{
-  color:#0f172a!important;font-weight:800!important;letter-spacing:-.035em!important;
-}
-[data-testid="stMetricDelta"]{color:#64748b!important}
-[data-testid="stDataFrame"],[data-testid="stDataEditor"]{
-  border:1px solid #d9dee7!important;border-radius:12px!important;overflow:hidden!important;
-  box-shadow:0 5px 18px rgba(15,23,42,.06)!important;background:#fff!important;
-}
-@media (max-width:900px){
-  [data-testid="stMetric"]{min-height:112px!important}
-}
 
 </style>
 """,
@@ -605,8 +583,14 @@ if active=='Dashboard':
  else:
   db=st.session_state.db;items=int((db.saldo_apto>0).sum());valor_apto=float(db.valor_total.sum());rr=[r for x in st.session_state.inventories.values() for r in x['rows']];cnt=[r for r in rr if r['contagens']];div=[r for r in cnt if abs(diff(r,last(r)))>1e-9]
   qtd_cnt=len(cnt);qtd_div=len(div);acc_itens=(100-(qtd_div/items*100)) if items else 100.0;acc_pos=(100-(qtd_div/qtd_cnt*100)) if qtd_cnt else 100.0
-  a,b,c,d=st.columns(4);a.metric('ITENS DIFERENTES COM SALDO',f'{items:,}'.replace(',','.'));b.metric('VALOR TOTAL APTO A CONTABILIZAR',brl(valor_apto));c.metric('POSIÇÕES CONTABILIZADAS',f'{qtd_cnt:,}'.replace(',','.'));d.metric('POSIÇÕES DIVERGENTES',f'{qtd_div:,}'.replace(',','.'))
-  a,b=st.columns(2);a.metric('ACURÁCIA · DIVERGENTES / ITENS COM SALDO',f'{acc_itens:.2f}%');b.metric('ACURÁCIA · DIVERGENTES / CONTABILIZADOS',f'{acc_pos:.2f}%')
+  a,b,c,d=st.columns(4)
+  setta_kpi(a,'ITENS DIFERENTES COM SALDO',f'{items:,}'.replace(','.'),'BASE APTA','#2563eb','#dbeafe')
+  setta_kpi(b,'VALOR TOTAL APTO A CONTABILIZAR',brl(valor_apto),'VALOR DO ESTOQUE','#0891b2','#cffafe')
+  setta_kpi(c,'POSIÇÕES CONTABILIZADAS',f'{qtd_cnt:,}'.replace(','.'),'CONTAGENS REGISTRADAS','#16a34a','#dcfce7')
+  setta_kpi(d,'POSIÇÕES DIVERGENTES',f'{qtd_div:,}'.replace(','.'),'EXIGEM TRATATIVA','#ef4444','#fee2e2')
+  a,b=st.columns(2)
+  setta_kpi(a,'ACURÁCIA · DIVERGENTES / ITENS COM SALDO',f'{acc_itens:.2f}%','ÍNDICE GERAL','#7c3aed','#ede9fe')
+  setta_kpi(b,'ACURÁCIA · DIVERGENTES / CONTABILIZADOS',f'{acc_pos:.2f}%','ÍNDICE CONTABILIZADO','#d97706','#ffedd5')
   topic_divider();section_band('02 · INDICADORES','VISÃO GRÁFICA')
   ch1,ch2=st.columns(2)
   with ch1:
