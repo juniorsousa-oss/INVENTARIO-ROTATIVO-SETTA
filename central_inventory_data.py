@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import gzip
 import io
+import json
 import os
 from datetime import datetime
 from typing import Any
@@ -141,6 +142,68 @@ def download_source(source_key: str, version_token: str) -> tuple[bytes, dict]:
     response = SESSION.get(signed_url, timeout=120)
     response.raise_for_status()
     return response.content, meta
+
+
+@st.cache_data(show_spinner=False, ttl=3600, max_entries=4)
+def download_source_frame(
+    source_key: str,
+    version_token: str,
+    *,
+    header: int = 1,
+) -> tuple[pd.DataFrame, dict]:
+    """Lê a fonte técnica normalizada; Excel é contingência para versões antigas."""
+    del version_token
+    try:
+        meta = api_call(
+            "source_normalized_download",
+            {"source_key": source_key},
+            timeout=30,
+        ).get("data") or {}
+        signed_url = str(meta.get("signed_url") or "")
+        if not signed_url:
+            raise RuntimeError("Fonte normalizada sem URL.")
+        response = SESSION.get(signed_url, timeout=120)
+        response.raise_for_status()
+        pack = json.loads(gzip.decompress(response.content).decode("utf-8"))
+        if str(pack.get("format") or "") != "SETTA_SOURCE_V1":
+            raise RuntimeError("Formato normalizado inválido.")
+        sheets = [
+            row for row in (pack.get("sheets") or [])
+            if isinstance(row, dict)
+        ]
+        if not sheets:
+            raise RuntimeError("Fonte normalizada sem planilha.")
+        raw = pd.DataFrame(sheets[0].get("rows") or [])
+        if len(raw) <= header:
+            return pd.DataFrame(), meta
+
+        values = raw.iloc[header].tolist()
+        used: dict[str, int] = {}
+        columns = []
+        for idx, value in enumerate(values):
+            base = (
+                f"Unnamed: {idx}"
+                if value is None or str(value).strip() == ""
+                else str(value)
+            )
+            count = used.get(base, 0)
+            used[base] = count + 1
+            columns.append(base if count == 0 else f"{base}.{count}")
+
+        frame = raw.iloc[header + 1 :].reset_index(drop=True).copy()
+        frame.columns = columns
+        return frame, meta
+    except Exception:
+        raw, meta = download_source(source_key, "")
+        return (
+            pd.read_excel(
+                io.BytesIO(raw),
+                sheet_name=0,
+                header=header,
+                dtype=str,
+            ),
+            meta,
+        )
 
 
 @st.cache_data(show_spinner=False, ttl=30, max_entries=2)
