@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import base64
+import gzip
+import io
 import os
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import requests
 import streamlit as st
 
@@ -82,6 +85,29 @@ def bundle_state() -> dict[str, dict]:
 
 def source_token(meta: dict) -> str:
     return f"v{int(meta.get('version') or 0)}|{meta.get('last_update_at') or ''}"
+
+def derived_status(keys: list[str]) -> dict[str, dict]:
+    rows = api_call("derived_status", {"keys": keys}, timeout=30).get("data") or []
+    return {
+        str(row.get("base_key")): row
+        for row in rows
+        if isinstance(row, dict)
+    }
+
+
+@st.cache_data(show_spinner=False, ttl=300, max_entries=3)
+def download_derived(base_key: str, version_token: str = "") -> tuple[pd.DataFrame, dict]:
+    del version_token
+    meta = api_call("derived_download", {"base_key": base_key}, timeout=30).get("data") or {}
+    signed_url = str(meta.get("signed_url") or "")
+    if not signed_url:
+        raise RuntimeError(f"Base {base_key} sem URL de leitura.")
+    response = SESSION.get(signed_url, timeout=120)
+    response.raise_for_status()
+    raw = gzip.decompress(response.content)
+    frame = pd.read_json(io.BytesIO(raw), orient="table")
+    return frame, meta
+
 
 
 @st.cache_data(show_spinner=False, ttl=3600, max_entries=4)
