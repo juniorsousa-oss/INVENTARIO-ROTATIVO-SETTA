@@ -24,6 +24,21 @@ def _global_page_icon():
 st.set_page_config(page_title='GESTÃO DE ESTOQUE | SETTA', page_icon=_global_page_icon(), layout='wide', initial_sidebar_state='expanded')
 DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
 
+ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
+ 'ALMOX. N.C.I',
+ 'ALMOX. N.C.R',
+ 'ASTEC',
+ 'G9-PROD',
+ 'G9-SEPA',
+ 'PROD. BARRAS',
+ 'PROD. CHAPAS',
+ 'PROD. PROC',
+ 'PROD. SUCATA',
+ 'PROD. TCTP',
+ 'QUALIDADE',
+ 'SETTA FIOS',
+}
+
 DEFAULT={
  'theme':'Dark','font':'Arial','font_size':16,'title_size':31,
  'primary':'#FFD63B','hover':'#F7C928','icon_color':'#FFD63B','dark_bg':'#080B0A','dark_panel':'#101614','dark_panel2':'#141A17','dark_border':'#2B3732','dark_text':'#F4F5F2','dark_muted':'#A9B1AC',
@@ -167,8 +182,7 @@ _cfg_defaults = {
     'settings_label':'CONFIGURAÇÕES',
     'report_label':'REPORTAR INCONSISTÊNCIAS',
     'new_inventory_text':'NOVO INVENTÁRIO',
-    'address_title':'ENDEREÇOS ELEGÍVEIS',
-    'sidebar_width':250,'menu_gap':2,
+        'sidebar_width':250,'menu_gap':2,
 }
 for _k, _v in _cfg_defaults.items():
     config.setdefault(_k, _v)
@@ -367,6 +381,12 @@ def nums(s):return s.apply(pnum).astype(float)
 def fn(v,d=3):return f'{float(v):,.{d}f}'.replace(',','X').replace('.',',').replace('X','.')
 def brl(v):return f'R$ {float(v):,.2f}'.replace(',','X').replace('.',',').replace('X','.')
 
+def eligible_addresses_from_frame(endereco_df):
+ if endereco_df is None or endereco_df.empty:return []
+ addresses=sorted([x for x in naddr(endereco_df.iloc[:,3]).unique() if x])
+ blocked={naddr(pd.Series([x])).iloc[0] for x in ESTOQUE_ENDERECOS_NAO_DISPONIVEIS}
+ return [x for x in addresses if x not in blocked]
+
 def build_db(an,end,eligible):
  a=an.iloc[:,[0,3,7,10]].copy();a.columns=['codigo','descricao','qtd_analitico','valor_k'];a['codigo']=ncode(a.codigo);a['descricao']=a.descricao.astype('string').fillna('').str.strip();a['qtd_analitico']=nums(a.qtd_analitico);a['valor_k']=nums(a.valor_k)
  a=a.groupby('codigo',as_index=False).agg(descricao=('descricao','first'),qtd_analitico=('qtd_analitico','sum'),valor_k=('valor_k','sum'));a['valor_unitario']=a.apply(lambda r:r.valor_k/r.qtd_analitico if abs(r.qtd_analitico)>1e-12 else 0,axis=1)
@@ -462,12 +482,7 @@ def sync_central_inventory(force=False):
 
   frames,metas=_central_frames()
   an=frames['analitico'];en=frames['endereco']
-  addresses=sorted([x for x in naddr(en.iloc[:,3]).unique() if x])
-  if not st.session_state.eligible:
-   st.session_state.eligible=addresses.copy()
-  else:
-   valid=set(addresses)
-   st.session_state.eligible=[x for x in st.session_state.eligible if x in valid]
+  st.session_state.eligible=eligible_addresses_from_frame(en)
   d,pos=build_db(an,en,st.session_state.eligible)
   st.session_state.an_df=an
   st.session_state.en_df=en
@@ -579,7 +594,7 @@ active=st.session_state.section
 if active=='Dashboard':
  st.markdown('<div class="section-title">DASHBOARD OPERACIONAL</div>',unsafe_allow_html=True)
  section_band('01 · VISÃO GERAL','INDICADORES DO ESTOQUE')
- if st.session_state.db is None:st.info('Importe e processe os relatórios na aba Banco de Dados.')
+ if st.session_state.db is None:st.info('Aguardando sincronização automática das fontes ANALÍTICO e ENDEREÇO pela API.')
  else:
   db=st.session_state.db;items=int((db.saldo_apto>0).sum());valor_apto=float(db.valor_total.sum());rr=[r for x in st.session_state.inventories.values() for r in x['rows']];cnt=[r for r in rr if r['contagens']];div=[r for r in cnt if abs(diff(r,last(r)))>1e-9]
   qtd_cnt=len(cnt);qtd_div=len(div);acc_itens=(100-(qtd_div/items*100)) if items else 100.0;acc_pos=(100-(qtd_div/qtd_cnt*100)) if qtd_cnt else 100.0
@@ -624,7 +639,7 @@ if active=='Dashboard':
 # Inventory
 elif active=='Inventário Rotativo':
  section_band('01 · INVENTÁRIO','CONTROLE E EXECUÇÃO')
- if st.session_state.db is None:st.info('Primeiro importe e processe a base na aba Banco de Dados.')
+ if st.session_state.db is None:st.info('Aguardando sincronização automática da base de estoque pela API.')
  else:
   a,b=st.columns(2);st.session_state.profile=a.radio('MODO OPERACIONAL',['Operador','Gestor'],index=0 if st.session_state.profile=='Operador' else 1,horizontal=True)
   if b.button(config['new_inventory_text'],type='primary',use_container_width=True):st.session_state.new_inv=True;st.rerun()
@@ -742,53 +757,41 @@ elif active=='Inventário Rotativo':
     st.success('Inventário encerrado e salvo no registro.');
     if st.button('Reabrir análise'):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
 
-# Database
+# Database — somente consulta da base tratada publicada pela Central
 elif active=='Banco de Dados':
- section_band('01 · BASE ATUAL','ANALÍTICO + ENDEREÇO')
- ensure_central_frames()
-
- if st.session_state.en_df is not None:
-  topic_divider();section_band('02 · ENDEREÇOS','ENDEREÇOS ELEGÍVEIS')
-  addresses=sorted([x for x in naddr(st.session_state.en_df.iloc[:,3]).unique() if x])
-  if not st.session_state.eligible:st.session_state.eligible=addresses.copy()
-  q=st.text_input('PESQUISAR ENDEREÇO',placeholder='EX.: G9-M3-A-C1')
-  shown=[x for x in addresses if q.strip().upper() in x] if q.strip() else addresses
-  a,b,c3=st.columns(3)
-  if a.button('MARCAR EXIBIDOS'):st.session_state.eligible=sorted(set(st.session_state.eligible)|set(shown));persist_db();st.rerun()
-  if b.button('DESMARCAR EXIBIDOS'):st.session_state.eligible=[x for x in st.session_state.eligible if x not in set(shown)];persist_db();st.rerun()
-  if c3.button('MARCAR TODOS'):st.session_state.eligible=addresses.copy();persist_db();st.rerun()
-  selected=set(st.session_state.eligible);st.caption(f'{len(shown)} ENDEREÇOS EXIBIDOS · {len(selected)} APTOS');cols=st.columns(4)
-  for i,addr in enumerate(shown):
-   with cols[i%4]:
-    v=st.checkbox(addr,value=addr in selected,key='address_'+str(abs(hash(addr))))
-    if v!=(addr in selected):
-     selected.add(addr) if v else selected.discard(addr);st.session_state.eligible=sorted(selected);persist_eligible()
-  a,b=st.columns(2);a.metric('ENDEREÇOS ENCONTRADOS',len(addresses));b.metric('ENDEREÇOS APTOS',len(st.session_state.eligible))
-  if st.button('ATUALIZAR BANCO COM ENDEREÇOS SELECIONADOS',type='primary',use_container_width=True):
-   try:
-    d,pos=build_db(st.session_state.an_df,st.session_state.en_df,st.session_state.eligible);st.session_state.db=d;st.session_state.pos=pos;persist_db();st.success('BANCO ATUALIZADO.')
-   except Exception as e:st.error(f'ERRO: {e}')
-
- topic_divider()
- with st.expander('CONTINGÊNCIA MANUAL',expanded=False):
-  a,b=st.columns(2)
-  with a:
-   f=st.file_uploader('ANALÍTICO',type=['xlsx','xlsm','xltx'],key='up_an')
-   if f:st.session_state.an_df=readxls(f);save('an_name',f.name);st.success(f'CARREGADO · {len(st.session_state.an_df):,} LINHAS')
-  with b:
-   f=st.file_uploader('ENDEREÇO',type=['xlsx','xlsm','xltx'],key='up_en')
-   if f:st.session_state.en_df=readxls(f);save('en_name',f.name);st.success(f'CARREGADO · {len(st.session_state.en_df):,} LINHAS')
-  if st.session_state.get('an_df') is not None and st.session_state.get('en_df') is not None:
-   if st.button('PROCESSAR CONTINGÊNCIA',type='primary',use_container_width=True):
-    try:
-     addresses=sorted([x for x in naddr(st.session_state.en_df.iloc[:,3]).unique() if x])
-     if not st.session_state.eligible:st.session_state.eligible=addresses.copy()
-     d,pos=build_db(st.session_state.an_df,st.session_state.en_df,st.session_state.eligible);st.session_state.db=d;st.session_state.pos=pos;persist_db();st.success('CONTINGÊNCIA PROCESSADA.')
-    except Exception as e:st.error(f'ERRO: {e}')
-
- if st.session_state.db is not None:
-  topic_divider();section_band('03 · DADOS','BANCO CONSOLIDADO')
-  v=st.session_state.db.copy();v['valor_unitario']=v.valor_unitario.map(brl);v['saldo_apto']=v.saldo_apto.map(fn);v['valor_k']=v.valor_k.map(brl);v['valor_total']=v.valor_total.map(brl);v.columns=['CÓDIGO','DESCRIÇÃO','QTD. ANALÍTICO','VALOR TOTAL K','VALOR UNITÁRIO','SALDO APTO','VALOR TOTAL APTO','CLASSIFICAÇÃO R$ UN.','CLASSIFICAÇÃO R$ TOTAL'];st.dataframe(v,use_container_width=True,hide_index=True,height=500);st.download_button('EXPORTAR BANCO EM EXCEL',excel_bytes(v,'Banco Consolidado'),'banco_consolidado.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+ section_band('01 · BASE CENTRAL','ESTOQUE TRATADO','CONSULTA SOMENTE LEITURA · ATUALIZAÇÃO AUTOMÁTICA VIA API')
+ try:
+  _derived_status=central_data.derived_status(['estoque_tratado'])
+  _treated_meta=_derived_status.get('estoque_tratado') or {}
+  if not bool(_treated_meta.get('available')):
+   st.info('A base ESTOQUE TRATADO ainda não está disponível na Central de Dados.')
+  else:
+   _treated_token=f"v{int(_treated_meta.get('version') or 0)}|{_treated_meta.get('processed_at') or _treated_meta.get('last_update_at') or ''}"
+   _treated,_treated_download_meta=central_data.download_derived('estoque_tratado',_treated_token)
+   _when=central_data.format_dt(_treated_meta.get('processed_at') or _treated_meta.get('last_update_at'))
+   a,b,c=st.columns(3)
+   setta_kpi(a,'REGISTROS',f'{len(_treated):,}'.replace(',','.'),'ESTOQUE TRATADO','#2563eb','#dbeafe')
+   _saldo=float(pd.to_numeric(_treated.get('SALDO_DISPONIVEL',pd.Series(dtype=float)),errors='coerce').fillna(0).sum()) if not _treated.empty else 0.0
+   setta_kpi(b,'SALDO DISPONÍVEL',fn(_saldo),'SOMA DA BASE TRATADA','#16a34a','#dcfce7')
+   _versao=int(_treated_meta.get('version') or 0)
+   setta_kpi(c,'VERSÃO',f'V{_versao}',_when,'CENTRAL DE DADOS','#7c3aed','#ede9fe')
+   topic_divider()
+   section_band('02 · RELATÓRIO','ESTOQUE TRATADO')
+   _view=_treated.copy()
+   _rename={
+    'COD_MATERIAL':'CÓDIGO',
+    'DESCRICAO':'DESCRIÇÃO',
+    'SALDO_EM_ESTOQUE':'SALDO EM ESTOQUE',
+    'SALDO_NAO_DISPONIVEL':'SALDO NÃO DISPONÍVEL',
+    'SALDO_DISPONIVEL':'SALDO DISPONÍVEL',
+   }
+   _view=_view.rename(columns=_rename)
+   for _col in ['SALDO EM ESTOQUE','SALDO NÃO DISPONÍVEL','SALDO DISPONÍVEL']:
+    if _col in _view.columns:_view[_col]=pd.to_numeric(_view[_col],errors='coerce').fillna(0).map(fn)
+   st.dataframe(_view,use_container_width=True,hide_index=True,height=560)
+   st.caption('REGRA DE DISPONIBILIDADE IDÊNTICA AO RELATÓRIO ESTOQUE TRATADO. NÃO HÁ EDIÇÃO, IMPORTAÇÃO OU SELEÇÃO MANUAL NESTA TELA.')
+ except Exception as exc:
+  st.warning(f'Não foi possível consultar o ESTOQUE TRATADO na Central: {exc}')
 
 
 # Register
