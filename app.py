@@ -704,6 +704,275 @@ if sync_central_inventory(force=False):
  st.rerun()
 
 
+st.markdown(
+ """
+ <style>
+ /* ============================================================
+    SIDEBAR SETTA V1 — ESPELHO VISUAL DO CONVERSOR MRP
+    26 / 20 / 8 / 42 / 2 / 20 / 20 / 8 px
+    ============================================================ */
+ section[data-testid="stSidebar"]{
+  background:#fff!important;
+  border-right:1px solid #e8ebf0!important;
+  width:260px!important;
+  min-width:260px!important;
+  max-width:260px!important;
+  flex:0 0 260px!important;
+  flex-basis:260px!important;
+  overflow:hidden!important;
+ }
+ section[data-testid="stSidebar"]>div{
+  width:260px!important;
+  min-width:260px!important;
+  max-width:260px!important;
+  box-sizing:border-box!important;
+ }
+ section[data-testid="stSidebar"] .block-container{
+  width:260px!important;
+  min-width:260px!important;
+  max-width:260px!important;
+  box-sizing:border-box!important;
+  padding:26px 16px 0 16px!important;
+ }
+ section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{
+  gap:0!important;
+  row-gap:0!important;
+ }
+ section[data-testid="stSidebar"] div[data-testid="stElementContainer"]{
+  margin:0!important;
+  padding:0!important;
+  min-height:0!important;
+ }
+
+ /* cartão superior */
+ section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-brand){
+  margin:0 0 20px 0!important;
+ }
+ section[data-testid="stSidebar"] .sidebar-brand{
+  width:100%!important;
+  margin:0!important;
+  padding:14px 16px!important;
+  background:#f8fafc!important;
+  border:1px solid #e5e8ee!important;
+  border-radius:12px!important;
+  box-sizing:border-box!important;
+ }
+ section[data-testid="stSidebar"] .sidebar-brand-title{
+  margin:0!important;
+  padding:0!important;
+  font-size:15px!important;
+  line-height:18px!important;
+  font-weight:800!important;
+  color:#111827!important;
+  letter-spacing:-.01em!important;
+ }
+ section[data-testid="stSidebar"] .sidebar-brand-sub{
+  margin:3px 0 0 0!important;
+  padding:0!important;
+  font-size:12px!important;
+  line-height:16px!important;
+  font-weight:400!important;
+  color:#6b7280!important;
+ }
+
+ /* títulos */
+ section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-section-label){
+  height:15px!important;
+  min-height:15px!important;
+  max-height:15px!important;
+ }
+ section[data-testid="stSidebar"] .sidebar-section-label{
+  display:block!important;
+  height:15px!important;
+  margin:0!important;
+  padding:0!important;
+  color:#374151!important;
+  font-size:12px!important;
+  line-height:15px!important;
+  font-weight:800!important;
+  text-transform:uppercase!important;
+  letter-spacing:.055em!important;
+ }
+
+ /* NAVEGAÇÃO -> primeiro botão = 8px */
+ section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-nav-gap-fixed){
+  display:block!important;
+  height:8px!important;
+  min-height:8px!important;
+  max-height:8px!important;
+ }
+ section[data-testid="stSidebar"] .sidebar-nav-gap-fixed{
+  display:block!important;
+  width:100%!important;
+  height:8px!important;
+  min-height:8px!important;
+  max-height:8px!important;
+  margin:0!important;
+  padding:0!important;
+ }
+
+ /* botões = 42px; gap = 2px */
+ section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
+  height:44px!important;
+  min-height:44px!important;
+  max-height:44px!important;
+  margin:0!important;
+  padding:0 0 2px 0!important;
+  box-sizing:border-box!important;
+ }
+ section[data-testid="stSidebar"] div[data-testid="stButton"]{
+  width:100%!important;
+  height:42px!important;
+  min-height:42px!important;
+  max-height:42px!important;
+  margin:0!important;
+  padding:0!important;
+ }
+ section[data-testid="stSidebar"] div[data-testid="stButton"] button{
+  position:relative!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  width:100%!important;
+  height:42px!important;
+  min-height:42px!important;
+  max-height:42px!important;
+  margin:0!important;
+  padding:0 12px 0 24px!important;
+  border:1px solid transparent!important;
+  border-radius:10px!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  color:#374151!important;
+  font-size:13px!important;
+  line-height:16px!important;
+  font-weight:500!important;
+  text-align:left!important;
+  box-sizing:border-box!important;
+ }
+ section[data-testid="stSidebar"] div[data-testid="stButton"] button > div,
+ section[data-testid="stSidebar"] div[data-testid="stButton"] button p{
+  width:100%!important;
+  margin:0!important;
+  padding:0!important;
+  text-align:left!important;
+  line-height:16px!important;
+ }
+ section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]{
+  background:transparent!important;
+  border-color:transparent!important;
+  color:#374151!important;
+ }
+ section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover{
+  background:#f8fafc!important;
+  border-color:#e5e7eb!important;
+  color:#111827!important;
+ }
+ section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]{
+  background:#111827!important;
+  border-color:#111827!important;
+  color:#fff!important;
+  box-shadow:0 5px 14px rgba(17,24,39,.14)!important;
+  font-weight:700!important;
+ }
+ section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] p{
+  color:#fff!important;
+  font-weight:700!important;
+ }
+ section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]::before{
+  content:""!important;
+  position:absolute!important;
+  left:7px!important;
+  top:50%!important;
+  width:4px!important;
+  height:20px!important;
+  border-radius:999px!important;
+  background:#ef4444!important;
+  transform:translateY(-50%)!important;
+ }
+
+ /* último botão -> linha = 20px; linha -> STATUS GERAL = 20px */
+ section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-divider-fixed){
+  height:39px!important;
+  min-height:39px!important;
+  max-height:39px!important;
+  padding:18px 0 20px 0!important;
+  box-sizing:border-box!important;
+ }
+ section[data-testid="stSidebar"] .sidebar-divider-fixed{
+  display:block!important;
+  width:100%!important;
+  height:1px!important;
+  min-height:1px!important;
+  max-height:1px!important;
+  margin:0!important;
+  padding:0!important;
+  background:#d1d5db!important;
+ }
+
+ /* STATUS GERAL -> cartão = 8px */
+ section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-status-gap-fixed){
+  display:block!important;
+  height:8px!important;
+  min-height:8px!important;
+  max-height:8px!important;
+ }
+ section[data-testid="stSidebar"] .sidebar-status-gap-fixed{
+  display:block!important;
+  width:100%!important;
+  height:8px!important;
+  min-height:8px!important;
+  max-height:8px!important;
+  margin:0!important;
+  padding:0!important;
+ }
+
+ /* cartão de status */
+ section[data-testid="stSidebar"] .sidebar-status-card{
+  width:100%!important;
+  margin:0!important;
+  padding:12px 14px!important;
+  background:#f8fafc!important;
+  border:1px solid #e5e8ee!important;
+  border-radius:10px!important;
+  box-sizing:border-box!important;
+  color:#6b7280!important;
+ }
+ section[data-testid="stSidebar"] .sidebar-status-name{
+  margin:0!important;
+  padding:0!important;
+  font-size:11px!important;
+  line-height:14px!important;
+  font-weight:800!important;
+  color:#64748b!important;
+  text-transform:uppercase!important;
+  letter-spacing:.025em!important;
+ }
+ section[data-testid="stSidebar"] .sidebar-status-value{
+  margin:4px 0 0 0!important;
+  padding:0!important;
+  font-size:13px!important;
+  line-height:16px!important;
+  font-weight:900!important;
+  text-transform:uppercase!important;
+ }
+ section[data-testid="stSidebar"] .sidebar-status-value.status-ok{color:#16a34a!important}
+ section[data-testid="stSidebar"] .sidebar-status-value.status-warning{color:#f59e0b!important}
+ section[data-testid="stSidebar"] .sidebar-status-value.status-error{color:#ef4444!important}
+ section[data-testid="stSidebar"] .sidebar-status-meta{
+  margin:6px 0 0 0!important;
+  padding:0!important;
+  color:#6b7280!important;
+  font-size:11px!important;
+  line-height:15px!important;
+  font-weight:400!important;
+  text-transform:uppercase!important;
+ }
+ </style>
+ """,
+ unsafe_allow_html=True,
+)
+
 # Sidebar — espelho estrutural do Controle de NFs
 _INV_NAV_PAGES=['Dashboard','Inventário Rotativo','Banco de Dados','Registro','Reportar Inconsistências','Configurações']
 
@@ -720,10 +989,18 @@ def _current_inventory_page():
 
 with st.sidebar:
  st.markdown(
-  '<div class="sidebar-brand"><div class="sidebar-brand-title">GESTÃO DE ESTOQUE</div><div class="sidebar-brand-sub">CONTROLE OPERACIONAL SETTA</div></div>'
+  '<div class="sidebar-brand"><div class="sidebar-brand-title">GESTÃO DE ESTOQUE</div><div class="sidebar-brand-sub">CONTROLE OPERACIONAL SETTA</div></div>',
+  unsafe_allow_html=True
+ )
+ st.markdown(
   '<div class="sidebar-section-label">NAVEGAÇÃO</div>',
   unsafe_allow_html=True
  )
+ st.markdown(
+  '<div class="sidebar-nav-gap-fixed"></div>',
+  unsafe_allow_html=True
+ )
+
  _current=_current_inventory_page()
  for _nav_page in _INV_NAV_PAGES:
   st.button(
@@ -734,11 +1011,20 @@ with st.sidebar:
    on_click=_set_inventory_page,
    args=(_nav_page,),
   )
- st.divider()
+
  st.markdown(
-  '<div class="sidebar-status-spacer"></div><div class="sidebar-section-label">STATUS GERAL</div>',
+  '<div class="sidebar-divider-fixed"></div>',
   unsafe_allow_html=True
  )
+ st.markdown(
+  '<div class="sidebar-section-label">STATUS GERAL</div>',
+  unsafe_allow_html=True
+ )
+ st.markdown(
+  '<div class="sidebar-status-gap-fixed"></div>',
+  unsafe_allow_html=True
+ )
+
  try:
   _sidebar_bundle=central_data.bundle_state()
   _sidebar_states=central_data.sync_state()
