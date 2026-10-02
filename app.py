@@ -260,11 +260,28 @@ def section_band(kicker,title,note=''):
 def topic_divider():
  st.markdown('<div class="topic-divider"></div>',unsafe_allow_html=True)
 
-def setta_kpi(col,label,value,delta='',accent='#111827',soft='#f3f4f6'):
+def setta_kpi(
+ col,
+ label,
+ value,
+ delta='',
+ accent='#111827',
+ soft='#f3f4f6',
+ extra='',
+):
+ # Mantém compatibilidade com chamadas antigas que ainda enviem um
+ # sétimo argumento visual. O conteúdo extra é opcional e não interfere
+ # no layout padrão do card.
+ extra_html=(
+  f'<div class="kpi-extra">{extra}</div>'
+  if str(extra or '').strip()
+  else ''
+ )
  col.markdown(
   f'<div class="kpi-card" style="--accent:{accent};--accent-soft:{soft}">'
   f'<div class="kpi-header"><span class="kpi-dot"></span><span class="kpi-label">{label}</span></div>'
-  f'<div class="kpi-value">{value}</div><div class="kpi-delta">{delta}</div></div>',
+  f'<div class="kpi-value">{value}</div><div class="kpi-delta">{delta}</div>'
+  f'{extra_html}</div>',
   unsafe_allow_html=True
  )
 
@@ -825,7 +842,7 @@ elif active=='Banco de Dados':
    st.dataframe(_view,use_container_width=True,hide_index=True,height=560)
    st.caption('REGRA DE DISPONIBILIDADE IDÊNTICA AO RELATÓRIO ESTOQUE TRATADO. NÃO HÁ EDIÇÃO, IMPORTAÇÃO OU SELEÇÃO MANUAL NESTA TELA.')
  except Exception as exc:
-  st.warning(f'Não foi possível consultar o ESTOQUE TRATADO na Central: {exc}')
+  st.warning(f'Não foi possível processar a visualização do ESTOQUE TRATADO: {exc}')
 
 
 # Register
