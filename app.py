@@ -820,12 +820,32 @@ elif active=='Banco de Dados':
    _treated_token=f"v{int(_treated_meta.get('version') or 0)}|{_treated_meta.get('processed_at') or _treated_meta.get('last_update_at') or ''}"
    _treated,_treated_download_meta=central_data.download_derived('estoque_tratado',_treated_token)
    _when=central_data.format_dt(_treated_meta.get('processed_at') or _treated_meta.get('last_update_at'))
-   a,b,c=st.columns(3)
-   setta_kpi(a,'REGISTROS',f'{len(_treated):,}'.replace(',','.'),'ESTOQUE TRATADO','#2563eb','#dbeafe')
    _saldo=float(pd.to_numeric(_treated.get('SALDO_DISPONIVEL',pd.Series(dtype=float)),errors='coerce').fillna(0).sum()) if not _treated.empty else 0.0
-   setta_kpi(b,'SALDO DISPONÍVEL',fn(_saldo),'SOMA DA BASE TRATADA','#16a34a','#dcfce7')
    _versao=int(_treated_meta.get('version') or 0)
-   setta_kpi(c,'VERSÃO',f'V{_versao}',f'CENTRAL DE DADOS · {_when}','#7c3aed','#ede9fe')
+
+   # Cards próprios desta tela: não dependem de setta_kpi(),
+   # evitando qualquer incompatibilidade entre versões durante deploy.
+   st.markdown(
+    '<div class="dashboard-kpi-grid">'
+    '<div class="dashboard-kpi dashboard-kpi--blue">'
+    '<div class="dashboard-kpi-top"><span class="dashboard-kpi-eyebrow">BASE TRATADA</span><span class="dashboard-kpi-status-dot"></span></div>'
+    '<div class="dashboard-kpi-label">REGISTROS</div>'
+    f'<div class="dashboard-kpi-value">{f"{len(_treated):,}".replace(",", ".")}</div>'
+    '<div class="dashboard-kpi-caption">ESTOQUE TRATADO</div></div>'
+    '<div class="dashboard-kpi dashboard-kpi--green">'
+    '<div class="dashboard-kpi-top"><span class="dashboard-kpi-eyebrow">DISPONIBILIDADE</span><span class="dashboard-kpi-status-dot"></span></div>'
+    '<div class="dashboard-kpi-label">SALDO DISPONÍVEL</div>'
+    f'<div class="dashboard-kpi-value">{fn(_saldo)}</div>'
+    '<div class="dashboard-kpi-caption">SOMA DA BASE TRATADA</div></div>'
+    '<div class="dashboard-kpi dashboard-kpi--violet">'
+    '<div class="dashboard-kpi-top"><span class="dashboard-kpi-eyebrow">CENTRAL DE DADOS</span><span class="dashboard-kpi-status-dot"></span></div>'
+    '<div class="dashboard-kpi-label">VERSÃO</div>'
+    f'<div class="dashboard-kpi-value">V{_versao}</div>'
+    f'<div class="dashboard-kpi-caption">{_when}</div></div>'
+    '</div>',
+    unsafe_allow_html=True
+   )
+
    topic_divider()
    section_band('02 · RELATÓRIO','ESTOQUE TRATADO')
    _view=_treated.copy()
@@ -842,7 +862,7 @@ elif active=='Banco de Dados':
    st.dataframe(_view,use_container_width=True,hide_index=True,height=560)
    st.caption('REGRA DE DISPONIBILIDADE IDÊNTICA AO RELATÓRIO ESTOQUE TRATADO. NÃO HÁ EDIÇÃO, IMPORTAÇÃO OU SELEÇÃO MANUAL NESTA TELA.')
  except Exception as exc:
-  st.warning(f'Não foi possível processar a visualização do ESTOQUE TRATADO: {exc}')
+  st.warning(f'Não foi possível consultar o ESTOQUE TRATADO na Central: {exc}')
 
 
 # Register
