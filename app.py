@@ -257,7 +257,12 @@ st.markdown(
 [data-testid="stAppViewContainer"]{background:#f4f7fb!important}
 [data-testid="stHeader"]{background:rgba(255,255,255,.96)!important}
 .block-container{max-width:1780px!important;padding-top:3.2rem!important;padding-left:2.7rem!important;padding-right:2.7rem!important;padding-bottom:3rem!important;width:100%!important}
-section[data-testid="stSidebar"]{background:#fff!important;border-right:1px solid #e8ebf0!important;width:260px!important;min-width:260px!important;max-width:260px!important;flex-basis:260px!important}
+section[data-testid="stSidebar"]{background:#fff!important;border-right:1px solid #e8ebf0!important}
+section[data-testid="stSidebar"][aria-expanded="true"]{width:260px!important;min-width:260px!important;max-width:260px!important;flex-basis:260px!important}
+section[data-testid="stSidebar"][aria-expanded="false"]{width:0!important;min-width:0!important;max-width:0!important;flex-basis:0!important;margin:0!important;border:0!important;overflow:hidden!important}
+[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="false"]) [data-testid="stMain"],
+[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="false"]) .stMain,
+[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="false"]) .main{width:100%!important;max-width:100%!important;flex:1 1 100%!important;margin-left:0!important}
 section[data-testid="stSidebar"] .block-container{padding-top:1.6rem!important;padding-left:1rem!important;padding-right:1rem!important}
 .intro,.setta-logo-card,.kpi-card,.panel{background:#fff;border:1px solid #e5e8ee;border-radius:14px}
 
@@ -292,7 +297,6 @@ section[data-testid="stSidebar"] hr{margin:.85rem 0!important}
 [data-testid="stAppViewContainer"] .main .block-container,
 [data-testid="stMain"] .block-container,
 .stMain .block-container{width:100%!important;max-width:100%!important;margin-left:0!important;margin-right:0!important}
-section[data-testid="stSidebar"][aria-expanded="false"]{width:0!important;min-width:0!important;max-width:0!important;flex-basis:0!important}
 
 .setta-logo-card{width:100%;min-height:128px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #e5e8ee;border-radius:16px;box-shadow:0 4px 14px rgba(24,39,75,.08);box-sizing:border-box;margin:0 0 2.55rem 0;padding:1.1rem 2rem}
 .setta-logo-card img{display:block;width:auto;height:auto;max-width:205px;max-height:86px;object-fit:contain}.fallback{font-size:2rem;letter-spacing:.08em}
