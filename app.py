@@ -805,6 +805,30 @@ with st.sidebar:
    args=(_nav_page,),
   )
 
+ st.markdown('<div class="sidebar-divider"></div><div class="sidebar-section-label">SESSÃO</div>',unsafe_allow_html=True)
+ _sidebar_user=_auth_user()
+ if _sidebar_user:
+  _sidebar_name=str(_sidebar_user.get('full_name') or _sidebar_user.get('username') or 'USUÁRIO SETTA')
+  st.markdown(
+   f'<div class="sidebar-status-card"><div class="sidebar-status-name">{_sidebar_name}</div>'
+   f'<div class="sidebar-status-value status-ok">{_session_profile().upper()}</div></div>',
+   unsafe_allow_html=True,
+  )
+  if st.button('SAIR',key='setta_auth_logout',use_container_width=True):
+   st.session_state.pop('_setta_auth_user',None)
+   st.rerun()
+ else:
+  st.caption('Sessão anônima · perfil Operador')
+  with st.form('sidebar_auth_form',clear_on_submit=False):
+   _login=st.text_input('USUÁRIO OU E-MAIL',key='sidebar_auth_login')
+   _password=st.text_input('SENHA',type='password',key='sidebar_auth_password')
+   _submit=st.form_submit_button('IDENTIFICAR USUÁRIO',use_container_width=True)
+  if _submit:
+   try:
+    if _authenticate_user(_login,_password):st.rerun()
+    else:st.error('Usuário ou senha inválidos.')
+   except Exception as exc:
+    st.error(f'Falha ao autenticar: {exc}')
 
  try:
   _sidebar_bundle=central_data.bundle_state()
@@ -936,7 +960,9 @@ elif active=='Inventário Rotativo':
  section_band('01 · INVENTÁRIO','CONTROLE E EXECUÇÃO')
  if st.session_state.db is None:st.info('Aguardando sincronização automática da base de estoque pela API.')
  else:
-  a,b=st.columns(2);st.session_state.profile=a.radio('MODO OPERACIONAL',['Operador','Gestor'],index=0 if st.session_state.profile=='Operador' else 1,horizontal=True)
+  a,b=st.columns([2,1])
+  a.markdown(f'**MODO OPERACIONAL:** {_session_profile().upper()}')
+  a.caption('O perfil Gestor é liberado somente para usuário SETTA autenticado com permissão administrativa.')
   if b.button(config['new_inventory_text'],type='primary',use_container_width=True):st.session_state.new_inv=True;st.rerun()
   if st.session_state.new_inv:
    with st.container(border=True):
@@ -946,7 +972,30 @@ elif active=='Inventário Rotativo':
      sel=select_products(st.session_state.db,n,urgent_codes);rows=make_rows(sel,st.session_state.pos)
      if not rows:st.error('Os produtos selecionados não possuem endereços aptos.')
      else:
-      doc=nextdoc();st.session_state.inventories[doc]={'documento':doc,'data':datetime.now().strftime('%d/%m/%Y %H:%M'),'responsavel':st.session_state.profile,'blind_count':blind,'ciclo':cycle(),'status':'EM CONTAGEM','rows':rows,'criado_em':datetime.now().isoformat(timespec='seconds'),'ciclo_marcado':False};persist_inv(st.session_state.inventories[doc]);st.session_state.selected=doc;st.session_state.new_inv=False;st.rerun()
+      try:
+       doc=nextdoc()
+      except Exception as exc:
+       st.error(f'Não foi possível gerar o número do inventário: {exc}')
+      else:
+       stamp=now_local()
+       st.session_state.inventories[doc]={
+        'documento':doc,
+        'data':stamp.strftime('%d/%m/%Y %H:%M'),
+        'responsavel':_session_operator(),
+        'perfil_responsavel':_session_profile(),
+        'blind_count':blind,
+        'ciclo':cycle(),
+        'status':'EM CONTAGEM',
+        'rows':rows,
+        'criado_em':stamp.isoformat(),
+        'ciclo_marcado':False,
+       }
+       if persist_inv(st.session_state.inventories[doc]):
+        st.session_state.selected=doc
+        st.session_state.new_inv=False
+        st.rerun()
+       else:
+        st.error('Não foi possível salvar o inventário. Tente novamente.')
     if y.button('Cancelar'):st.session_state.new_inv=False;st.rerun()
   def render_inventory_cards(items):
    for inv in items:
@@ -1151,9 +1200,28 @@ elif active=='Reportar Inconsistências':
      if not codigo or not endereco or not obs:
       st.error('Código, endereço e observação são obrigatórios.')
      else:
-      rid=datetime.now().strftime('%Y%m%d%H%M%S')+'-'+uuid.uuid4().hex[:6].upper()
-      st.session_state.reports[rid]={'id':rid,'criado_em':datetime.now().strftime('%d/%m/%Y %H:%M:%S'),'equipe':equipe,'codigo':str(codigo),'descricao':descricao,'endereco':str(endereco),'observacao':obs,'status':'ABERTO','inventario_doc':None,'encerrado_em':None}
-      persist_reports();st.session_state.new_report=False;st.success(f'Inconsistência {rid} registrada.');st.rerun()
+      stamp=now_local()
+      rid=stamp.strftime('%Y%m%d%H%M%S')+'-'+uuid.uuid4().hex[:6].upper()
+      report={
+       'id':rid,
+       'criado_em':stamp.isoformat(),
+       'criado_por':_session_operator(),
+       'perfil_criador':_session_profile(),
+       'equipe':equipe,
+       'codigo':str(codigo),
+       'descricao':descricao,
+       'endereco':str(endereco),
+       'observacao':obs,
+       'status':'ABERTO',
+       'inventario_doc':None,
+       'encerrado_em':None,
+      }
+      if persist_report(report):
+       st.session_state.new_report=False
+       st.success(f'Inconsistência {rid} registrada.')
+       st.rerun()
+      else:
+       st.error('Não foi possível registrar a inconsistência.')
     if y.button('CANCELAR',use_container_width=True):st.session_state.new_report=False;st.rerun()
   reports=sorted(st.session_state.reports.values(),key=lambda x:x.get('criado_em',''),reverse=True)
   abertos=[r for r in reports if r.get('status')=='ABERTO'];encerrados=[r for r in reports if r.get('status')=='ENCERRADO']
@@ -1179,6 +1247,10 @@ elif active=='Reportar Inconsistências':
 # User administration
 # Settings
 elif active=='Configurações':
+ if _session_profile()!='Gestor':
+  section_band('01 · ACESSO','CONFIGURAÇÕES RESTRITAS','AUTENTIQUE UM USUÁRIO ADMINISTRADOR SETTA PARA ALTERAR CONFIGURAÇÕES.')
+  st.warning('Acesso restrito ao perfil Gestor.')
+  st.stop()
  tab_inv,tab_api=st.tabs(['INVENTÁRIO','ACOMPANHAMENTO DE API'])
  with tab_inv:
   section_band('01 · INVENTÁRIO','CONFIGURAÇÕES OPERACIONAIS')
