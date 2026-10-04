@@ -983,7 +983,7 @@ elif active=='Inventário Rotativo':
   doc=st.session_state.selected
   if doc in st.session_state.inventories:
    inv=st.session_state.inventories[doc];st.divider();st.markdown(f'### Inventário {doc} — {inv["status"]}')
-   prof=st.session_state.profile
+   prof=_session_profile()
    if prof=='Operador' and inv['status']=='EM CONTAGEM':
     for r in inv['rows']:
      if r['contagens']:continue
