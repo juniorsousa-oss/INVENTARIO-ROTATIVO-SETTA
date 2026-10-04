@@ -99,11 +99,19 @@ def operational_state(keys: list[str] | None = None) -> dict[str, Any]:
     return state if isinstance(state, dict) else {}
 
 
-def save_operational_state(state_key: str, value: Any) -> dict:
-    """Persiste uma seção do estado operacional via Edge Function."""
+def save_operational_state(
+    state_key: str,
+    value: Any,
+    auth_token: str = "",
+) -> dict:
+    """Persiste configuração operacional via sessão administrativa."""
     return api_call(
         "inventory_state_set",
-        {"state_key": state_key, "value": value},
+        {
+            "state_key": state_key,
+            "value": value,
+            "auth_token": str(auth_token or "").strip(),
+        },
         timeout=45,
     ).get("data") or {}
 
