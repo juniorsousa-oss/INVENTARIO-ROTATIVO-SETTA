@@ -120,6 +120,20 @@ for token in [
     if token not in app:
         fail(f"Regra operacional ausente: {token}")
 
+for token in [
+    "def _cached_inventory_snapshot",
+    "_central_inventory_session_token",
+    "def _load_inventory_fallback",
+    "def _save_local_inventory_snapshot",
+]:
+    if token not in app:
+        fail(f"Otimização de carregamento ausente: {token}")
+
+if "_fsdb=firestore_load_db()" in app:
+    fail("Firestore voltou ao caminho crítico de inicialização.")
+if "if sync_central_inventory(force=False):\n st.rerun()" in app:
+    fail("Rerun extra após sincronização retornou.")
+
 expected_requirements = {
     "streamlit==1.65.0",
     "pandas==3.0.6",
