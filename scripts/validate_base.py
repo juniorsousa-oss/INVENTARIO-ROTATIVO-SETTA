@@ -25,6 +25,9 @@ for rel in [
     "setta_auth.py",
     "central_inventory_data.py",
     ".streamlit/config.toml",
+    ".gitignore",
+    "supabase/migrations/20261004_inventory_atomic_state.sql",
+    "supabase/migrations/20261004_inventory_auth_sessions.sql",
 ]:
     if not (ROOT / rel).exists():
         fail(f"Arquivo obrigatório ausente: {rel}")
@@ -106,7 +109,7 @@ central_contract = [
     "inventory_state_set",
     "derived_status",
     "derived_download",
-    "visual_get",
+    "visual_shell_get",
     '"ui_config": row.get("ui_config") or {}',
 ]
 for token in central_contract:
@@ -201,6 +204,17 @@ for token in [
 
 if "tempfile.gettempdir()" not in app:
     fail("SQLite de contingência voltou para o diretório do projeto.")
+
+for token in [
+    "inventory_login",
+    "inventory_logout",
+    "inventory_token",
+]:
+    if token not in auth:
+        fail(f"Sessão administrativa ausente: {token}")
+
+if "visual_shell_get" not in central:
+    fail("Identidade visual leve não está sendo utilizada.")
 
 build = re.search(r"BUILD_DIAGNOSTICO\s*=\s*'([^']+)'", app)
 if not build:
