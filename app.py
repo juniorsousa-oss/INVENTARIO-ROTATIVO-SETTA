@@ -123,8 +123,6 @@ def _fs_load_df(db, name):
         r.pop('_ordem', None)
     return pd.DataFrame(rows)
 
-    db.collection('estoque_config').document('enderecos').set({'enderecos': list(values or [])})
-
 def _fs_load_eligible(db):
     snap = db.collection('estoque_config').document('enderecos').get()
     if not snap.exists:
@@ -196,29 +194,34 @@ if 'cycles' not in st.session_state:
 if 'section' not in st.session_state: st.session_state.section='Dashboard'
 if 'selected' not in st.session_state: st.session_state.selected=None
 if 'new_inv' not in st.session_state: st.session_state.new_inv=False
-if 'profile' not in st.session_state: st.session_state.profile='Operador'
 if 'reports' not in st.session_state:
  _saved_reports=_initial_operational_value('reports',{}) or {}
  st.session_state.reports=_saved_reports if isinstance(_saved_reports,dict) else {}
 
-if st.session_state.profile not in ('Operador','Gestor'): st.session_state.profile='Operador'
 cfg=st.session_state.cfg
 config=cfg
 
-# Migração transparente do estado local antigo para o Supabase.
-# Executa uma vez por sessão e somente para chaves que ainda não existem remotamente.
+# Migração transparente do estado local antigo para a persistência atômica.
+# Executa uma vez por sessão e apenas quando a chave ainda não existe remotamente.
 if not st.session_state.get('_operational_state_migration_checked'):
- for _state_key,_state_value in (
-  ('cfg',st.session_state.cfg),
-  ('inventories',st.session_state.inventories),
-  ('cycles',st.session_state.cycles),
-  ('reports',st.session_state.reports),
- ):
-  if _state_key not in _remote_operational_state and _state_value:
-   try:
-    central_data.save_operational_state(_state_key,_state_value)
-   except Exception as exc:
-    st.session_state['_operational_persistence_error']=str(exc)
+ try:
+  if 'cfg' not in _remote_operational_state and st.session_state.cfg:
+   central_data.save_operational_state('cfg',st.session_state.cfg)
+
+  if 'inventories' not in _remote_operational_state and st.session_state.inventories:
+   for _doc,_inv in st.session_state.inventories.items():
+    central_data.save_inventory_document(str(_doc),_inv)
+
+  if 'cycles' not in _remote_operational_state and st.session_state.cycles:
+   central_data.merge_inventory_cycles(st.session_state.cycles)
+
+  if 'reports' not in _remote_operational_state and st.session_state.reports:
+   for _rid,_rep in st.session_state.reports.items():
+    central_data.save_inventory_report(str(_rid),_rep)
+
+  st.session_state.pop('_operational_persistence_error',None)
+ except Exception as exc:
+  st.session_state['_operational_persistence_error']=str(exc)
  st.session_state['_operational_state_migration_checked']=True
 
 # Autenticação central SETTA. A política global do OperaHub decide se o login é obrigatório.
@@ -229,6 +232,25 @@ def _setta_auth_bootstrap_cached(anon_key):
 def _auth_user():
  user=st.session_state.get('_setta_auth_user')
  return user if isinstance(user,dict) else None
+
+def _session_operator():
+ user=_auth_user()
+ if user:
+  return str(user.get('full_name') or user.get('username') or 'USUÁRIO SETTA').strip()
+ return 'OPERADOR NÃO IDENTIFICADO'
+
+def _session_profile():
+ user=_auth_user()
+ role=str((user or {}).get('role') or '').strip().lower()
+ return 'Gestor' if role in {'admin','gestor'} else 'Operador'
+
+def _authenticate_user(login,password):
+ user=setta_auth.authenticate(central_data.supabase_key(),login,password)
+ if not user:
+  return False
+ st.session_state['_setta_auth_user']=user
+ st.session_state.pop('_setta_auth_password',None)
+ return True
 
 def _setta_login_required():
  key=central_data.supabase_key()
@@ -258,56 +280,37 @@ def _render_setta_auth_gate():
   submitted=st.form_submit_button('ENTRAR',type='primary',use_container_width=True)
  if submitted:
   try:
-   user=setta_auth.authenticate(central_data.supabase_key(),login,password)
+   user_ok=_authenticate_user(login,password)
   except Exception as exc:
    st.error(f'Não foi possível validar o acesso: {exc}')
   else:
-   if user:
-    st.session_state['_setta_auth_user']=user
-    st.session_state.pop('_setta_auth_password',None)
+   if user_ok:
     st.rerun()
    else:
     st.error('Usuário ou senha inválidos.')
  st.stop()
-def _persist_operational(key,value):
- # Supabase é a persistência principal. SQLite fica apenas como contingência
- # local caso a Central esteja temporariamente indisponível.
- save(key,value)
+def persist_cfg():
+ save('cfg',cfg)
  try:
-  central_data.save_operational_state(key,value)
+  central_data.save_operational_state('cfg',cfg)
   st.session_state.pop('_operational_persistence_error',None)
   return True
  except Exception as exc:
   st.session_state['_operational_persistence_error']=str(exc)
   return False
 
-def persist_cfg(): _persist_operational('cfg',cfg)
-def persist_all():
- _persist_operational('inventories',st.session_state.inventories)
- _persist_operational('cycles',st.session_state.cycles)
-
-def persist_eligible():
- db=firebase_db()
- if db is not None:
-  try:
-   _fs_save_eligible(db,st.session_state.eligible)
-   return
-  except Exception:
-   pass
- save('eligible',st.session_state.eligible)
-
-def persist_db():
- db=firebase_db()
- if db is not None:
-  try:
-   _fs_save_df(db,'estoque_produtos',st.session_state.db,'codigo')
-   _fs_save_df(db,'estoque_posicoes',st.session_state.pos,None)
-   _fs_save_eligible(db,st.session_state.eligible)
-   return
-  except Exception:
-   pass
- save('db',st.session_state.db); save('pos',st.session_state.pos); save('eligible',st.session_state.eligible)
-def persist_reports(): _persist_operational('reports',st.session_state.reports)
+def persist_report(report):
+ rid=str(report.get('id') or '').strip()
+ if not rid:return False
+ st.session_state.reports[rid]=report
+ save('reports',st.session_state.reports)
+ try:
+  central_data.save_inventory_report(rid,report)
+  st.session_state.pop('_operational_persistence_error',None)
+  return True
+ except Exception as exc:
+  st.session_state['_operational_persistence_error']=str(exc)
+  return False
 
 def excel_bytes(df, sheet_name):
  out=io.BytesIO()
