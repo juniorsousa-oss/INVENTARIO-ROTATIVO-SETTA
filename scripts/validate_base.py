@@ -145,7 +145,6 @@ expected_requirements = {
     "xlrd==2.0.2",
     "firebase-admin==7.7.0",
     "requests==2.34.2",
-    "Pillow==11.3.0",
     "altair==6.3.0",
 }
 actual = {
@@ -167,6 +166,41 @@ for token in [
 
 if "AUTH_REQUIRED = False" in app:
     fail("Bypass fixo de autenticação retornou.")
+
+for token in [
+    "next_inventory_document",
+    "save_inventory_document",
+    "save_inventory_report",
+    "close_inventory_atomic",
+    "merge_inventory_cycles",
+]:
+    if token not in central:
+        fail(f"Operação atômica ausente: {token}")
+
+for token in [
+    "_session_profile()",
+    "_session_operator()",
+    "America/Sao_Paulo",
+    "inventory_close_atomic",
+]:
+    if token not in app and token not in central:
+        fail(f"Segurança/rastreabilidade ausente: {token}")
+
+for token in [
+    "radio('MODO OPERACIONAL'",
+    "session_state.profile",
+    "def persist_all(",
+    "def persist_db(",
+    "def persist_eligible(",
+    "def persist_reports(",
+    "def readxls(",
+    "def css(",
+]:
+    if token in app:
+        fail(f"Legado operacional retornou: {token}")
+
+if "tempfile.gettempdir()" not in app:
+    fail("SQLite de contingência voltou para o diretório do projeto.")
 
 build = re.search(r"BUILD_DIAGNOSTICO\s*=\s*'([^']+)'", app)
 if not build:
