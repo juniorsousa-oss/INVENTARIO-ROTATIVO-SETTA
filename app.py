@@ -6,11 +6,17 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from PIL import Image
 import central_inventory_data as central_data
+import setta_shell
+import setta_auth
 
 try:
  _GLOBAL_VISUAL_CONFIG=central_data.load_visual_config()
 except Exception:
  _GLOBAL_VISUAL_CONFIG={}
+
+SETTA_UI_CONFIG=setta_shell.build_ui_config(
+ _GLOBAL_VISUAL_CONFIG.get('ui_config') or {}
+)
 
 def _global_page_icon():
  try:
@@ -22,7 +28,17 @@ def _global_page_icon():
  return '📦'
 
 st.set_page_config(page_title='GESTÃO DE ESTOQUE | SETTA', page_icon=_global_page_icon(), layout='wide', initial_sidebar_state='expanded')
-BUILD_DIAGNOSTICO = 'layout-sync-20261002-A'
+
+def _setta_sidebar_is_open():
+ return bool(st.session_state.get('_setta_sidebar_open',False))
+
+def _setta_toggle_sidebar():
+ st.session_state['_setta_sidebar_open']=not _setta_sidebar_is_open()
+
+def _setta_close_sidebar():
+ st.session_state['_setta_sidebar_open']=False
+
+BUILD_DIAGNOSTICO = 'baseline-setta-20261004-A'
 DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
@@ -233,8 +249,54 @@ for _k, _v in _cfg_defaults.items():
     config.setdefault(_k, _v)
     cfg.setdefault(_k, _v)
 
-# ACESSO DIRETO — SEM LOGIN, SENHA OU BLOQUEIO DE AUTENTICAÇÃO NESTA ETAPA.
-AUTH_REQUIRED = False
+# Autenticação central SETTA. A política global do OperaHub decide se o login é obrigatório.
+@st.cache_data(ttl=60,show_spinner=False,max_entries=2)
+def _setta_auth_bootstrap_cached(anon_key):
+ return setta_auth.bootstrap(anon_key)
+
+def _auth_user():
+ user=st.session_state.get('_setta_auth_user')
+ return user if isinstance(user,dict) else None
+
+def _setta_login_required():
+ key=central_data.supabase_key()
+ if not key:
+  st.session_state['_setta_auth_policy_error']='SUPABASE_ANON_KEY não configurada.'
+  return True
+ try:
+  payload=_setta_auth_bootstrap_cached(key)
+  settings=payload.get('settings') if isinstance(payload,dict) else {}
+  required=bool((settings or {}).get('login_required',False))
+  st.session_state['_setta_auth_required']=required
+  st.session_state.pop('_setta_auth_policy_error',None)
+  return required
+ except Exception as exc:
+  st.session_state['_setta_auth_policy_error']=str(exc)
+  return True
+
+def _render_setta_auth_gate():
+ if not _setta_login_required() or _auth_user():
+  return True
+ section_band('ACESSO SETTA','AUTENTICAÇÃO NECESSÁRIA','UTILIZE O MESMO USUÁRIO E SENHA DO OPERAHUB.')
+ if st.session_state.get('_setta_auth_policy_error'):
+  st.warning('Não foi possível confirmar a política central de acesso. Por segurança, o aplicativo permanece bloqueado até a autenticação.')
+ with st.form('setta_auth_login_form',clear_on_submit=False):
+  login=st.text_input('USUÁRIO OU E-MAIL',key='_setta_auth_login')
+  password=st.text_input('SENHA',type='password',key='_setta_auth_password')
+  submitted=st.form_submit_button('ENTRAR',type='primary',use_container_width=True)
+ if submitted:
+  try:
+   user=setta_auth.authenticate(central_data.supabase_key(),login,password)
+  except Exception as exc:
+   st.error(f'Não foi possível validar o acesso: {exc}')
+  else:
+   if user:
+    st.session_state['_setta_auth_user']=user
+    st.session_state.pop('_setta_auth_password',None)
+    st.rerun()
+   else:
+    st.error('Usuário ou senha inválidos.')
+ st.stop()
 def _persist_operational(key,value):
  # Supabase é a persistência principal. SQLite fica apenas como contingência
  # local caso a Central esteja temporariamente indisponível.
@@ -378,87 +440,13 @@ def css():
 st.markdown(
     """
 <style>
-:root{--p:#111111}
-[data-testid="stAppViewContainer"]{background:#f4f7fb!important}
-[data-testid="stHeader"]{background:rgba(255,255,255,.96)!important}
-.block-container{max-width:1780px!important;padding-top:3.2rem!important;padding-left:2.7rem!important;padding-right:2.7rem!important;padding-bottom:3rem!important;width:100%!important}
-section[data-testid="stSidebar"]{background:#fff!important;border-right:1px solid #e8ebf0!important;width:260px!important;min-width:260px!important;max-width:260px!important;flex-basis:260px!important}
-section[data-testid="stSidebar"] .block-container{padding-top:1.6rem!important;padding-left:1rem!important;padding-right:1rem!important}
-.intro,.setta-logo-card,.kpi-card,.panel{background:#fff;border:1px solid #e5e8ee;border-radius:14px}
-
-.sidebar-brand{background:#f8fafc;border:1px solid #e5e8ee;border-radius:12px;padding:.9rem 1rem;margin:0 0 1.05rem 0}
-.sidebar-brand-title{font-size:.92rem;font-weight:800;color:#111827;letter-spacing:-.01em}
-.sidebar-brand-sub{margin-top:.18rem;font-size:.75rem;color:#6b7280}
-.sidebar-section-label{margin:.25rem 0 .45rem 0;color:#374151;font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.055em}
-.sidebar-logo-preview{width:100%;min-height:82px;display:flex;justify-content:center;align-items:center;margin:.65rem 0 .5rem 0;padding:.65rem .8rem;background:#fff;border:1px dashed #d1d5db;border-radius:10px;box-sizing:border-box;overflow:hidden}
-.sidebar-logo-preview img{display:block;width:auto;height:auto;max-width:140px;max-height:62px;object-fit:contain}
-.sidebar-info-card{background:#f8fafc;border:1px solid #e5e8ee;border-radius:10px;padding:.75rem .85rem;color:#6b7280;font-size:.76rem;line-height:1.55}
-
-section[data-testid="stSidebar"] div[data-testid="stButton"]{margin:0!important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button{position:relative!important;min-height:42px!important;justify-content:flex-start!important;text-align:left!important;padding:.56rem .72rem .56rem calc(.88rem + 10px)!important;border-radius:10px!important;font-size:.83rem!important;font-weight:600!important;line-height:1.2!important;width:100%!important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button > div{width:100%!important;text-align:left!important;justify-content:flex-start!important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button p{width:100%!important;margin:0!important;text-align:left!important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]{background:transparent!important;border:1px solid transparent!important;color:#374151!important;box-shadow:none!important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover{background:#f8fafc!important;border-color:#e5e7eb!important;color:#111827!important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]{background:#111827!important;border:1px solid #111827!important;color:#fff!important;box-shadow:0 5px 14px rgba(17,24,39,.14)!important;font-weight:700!important}
-section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]::before{content:"";position:absolute;left:.42rem;top:50%;width:4px;height:20px;border-radius:999px;background:#ef4444;transform:translateY(-50%)}
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){margin-bottom:-.45rem!important}
-.sidebar-status-spacer{height:.6rem!important;min-height:.6rem!important}
-.sidebar-status-card{background:#f8fafc;border:1px solid #e5e8ee;border-radius:10px;padding:.75rem .85rem;color:#6b7280;font-size:.72rem;line-height:1.5}
-.sidebar-status-name{font-size:.68rem;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.025em}
-.sidebar-status-value{margin-top:.16rem;font-size:.8rem;font-weight:900;color:#111827;text-transform:uppercase}
-.sidebar-status-value.status-ok{color:#16a34a!important}
-.sidebar-status-value.status-warning{color:#f59e0b!important}
-.sidebar-status-value.status-error{color:#ef4444!important}
-.sidebar-status-meta{margin-top:.24rem;color:#6b7280;font-size:.66rem;line-height:1.45;text-transform:uppercase}
-section[data-testid="stSidebar"] hr{margin:.85rem 0!important}
-
-/* PADRÃO VALIDADO DO CONTROLE DE NFs:
-   o layout do Streamlit já desconta a sidebar do fluxo principal.
-   Não subtrair 260 px novamente, pois isso estreita o conteúdo. */
-[data-testid="stAppViewContainer"]{
-  overflow-x:hidden!important;
-}
-[data-testid="stAppViewContainer"] > .main,
-[data-testid="stAppViewContainer"] .main,
-[data-testid="stMain"],
-.stMain{
-  width:100%!important;
-  max-width:100%!important;
-  min-width:0!important;
-  flex:1 1 auto!important;
-  margin-left:0!important;
-  margin-right:0!important;
-  overflow-x:hidden!important;
-  box-sizing:border-box!important;
-}
-[data-testid="stAppViewContainer"] .main .block-container,
-[data-testid="stMain"] .block-container,
-.stMain .block-container{
-  width:100%!important;
-  max-width:100%!important;
-  min-width:0!important;
-  margin-left:0!important;
-  margin-right:0!important;
-  box-sizing:border-box!important;
-}
-section[data-testid="stSidebar"][aria-expanded="false"]{
-  width:0!important;
-  min-width:0!important;
-  max-width:0!important;
-  flex-basis:0!important;
-}
-
-.setta-logo-card{width:100%;min-height:128px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #e5e8ee;border-radius:16px;box-shadow:0 4px 14px rgba(24,39,75,.08);box-sizing:border-box;margin:0 0 2.55rem 0;padding:1.1rem 2rem}
-.setta-logo-card img{display:block;width:auto;height:auto;max-width:205px;max-height:86px;object-fit:contain}.fallback{font-size:2rem;letter-spacing:.08em}
-.app-title{margin:0!important;padding:0!important;font-size:2.55rem!important;line-height:1.08!important;font-weight:800!important;letter-spacing:-.04em!important;color:#050505!important}
-.app-sub{margin-top:.72rem!important;margin-bottom:1.65rem!important;color:#4f5661!important;font-size:.94rem!important;line-height:1.35!important}
+:root{--p:#111827}
 .section-title{margin:0 0 1rem!important;color:#0f172a!important;font-size:1.28rem!important;font-weight:900!important;letter-spacing:-.02em;text-transform:uppercase}
-.section-band{margin:0 0 .95rem;padding:.82rem 1rem;background:#fff;border:1px solid #e5e8ee;border-left:5px solid #111827;border-radius:12px;box-shadow:0 3px 12px rgba(15,23,42,.035)}
-.section-band-kicker{font-size:.66rem;font-weight:900;letter-spacing:.085em;text-transform:uppercase;color:#ef4444;margin-bottom:.18rem}
-.section-band-title{font-size:1.08rem;font-weight:900;color:#111827;letter-spacing:-.015em;line-height:1.2;text-transform:uppercase}
-.section-band-note{margin-top:.22rem;color:#667085;font-size:.75rem;line-height:1.35}
-.topic-divider{height:1px;background:#cbd5e1;margin:1.55rem 0 1.05rem;width:100%}
+.section-band{margin:0 0 .95rem!important;padding:.82rem 1rem!important;background:#fff!important;border:1px solid #e5e8ee!important;border-left:5px solid #111827!important;border-radius:12px!important;box-shadow:0 3px 12px rgba(15,23,42,.035)!important}
+.section-band-kicker{font-size:.66rem!important;font-weight:900!important;letter-spacing:.085em!important;text-transform:uppercase!important;color:#ef4444!important;margin-bottom:.18rem!important}
+.section-band-title{font-size:1.08rem!important;font-weight:900!important;color:#111827!important;letter-spacing:-.015em!important;line-height:1.2!important;text-transform:uppercase!important}
+.section-band-note{margin-top:.22rem!important;color:#667085!important;font-size:.75rem!important;line-height:1.35!important}
+.topic-divider{height:1px!important;background:#cbd5e1!important;margin:1.55rem 0 1.05rem!important;width:100%!important}
 .api-status-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.8rem}
 .api-status-name{font-size:.92rem;font-weight:900;color:#111827;text-transform:uppercase}
 .api-status-filter{margin-top:.18rem;font-size:.7rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.025em}
@@ -468,27 +456,25 @@ section[data-testid="stSidebar"][aria-expanded="false"]{
 .api-stat-label{font-size:.61rem;font-weight:900;letter-spacing:.055em;text-transform:uppercase;color:#64748b;margin-bottom:.28rem}
 .api-stat-value{font-size:.92rem;font-weight:900;color:#111827;line-height:1.15;overflow-wrap:anywhere}
 .setta-empty-state{border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;padding:.85rem 1rem;color:#64748b;font-size:.76rem;font-weight:800;letter-spacing:.02em;text-transform:uppercase;margin:.1rem 0 .5rem}
+.intro,.panel{background:#fff;border:1px solid #e5e8ee;border-radius:14px}
 .intro{padding:.9rem 1rem;color:#555c66;margin-bottom:1rem;box-shadow:0 3px 12px rgba(15,23,42,.035)}
 .kpi-card{position:relative;min-height:116px;padding:16px 18px 15px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;box-shadow:0 4px 16px rgba(15,23,42,.055);overflow:hidden;transition:transform .12s ease,box-shadow .12s ease}
-.kpi-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--accent)}.kpi-card.selected{outline:2px solid var(--accent);outline-offset:1px}
-.kpi-header{display:flex;align-items:center;gap:8px;margin-bottom:11px}.kpi-dot{width:9px;height:9px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft);flex:0 0 auto}
-.kpi-label{color:#475569;font-size:.83rem;font-weight:700;line-height:1.15}.kpi-value{color:#0f172a;font-size:2rem;font-weight:800;line-height:1;letter-spacing:-.035em}.kpi-delta{margin-top:8px;color:#64748b;font-size:.76rem}
+.kpi-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--accent)}
+.kpi-card.selected{outline:2px solid var(--accent);outline-offset:1px}
+.kpi-header{display:flex;align-items:center;gap:8px;margin-bottom:11px}
+.kpi-dot{width:9px;height:9px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft);flex:0 0 auto}
+.kpi-label{color:#475569;font-size:.72rem!important;font-weight:900!important;line-height:1.15;text-transform:uppercase;letter-spacing:.025em}
+.kpi-value{color:#0f172a;font-size:2rem;font-weight:800;line-height:1;letter-spacing:-.035em}
+.kpi-delta{margin-top:8px;color:#64748b;font-size:.66rem!important;font-weight:700!important;text-transform:uppercase;letter-spacing:.02em}
 [data-testid="stDataFrame"],[data-testid="stDataEditor"]{border:1px solid #d9dee7;border-radius:12px;overflow:hidden;box-shadow:0 5px 18px rgba(15,23,42,.06);background:#fff}
-[data-testid="stDataFrame"] canvas,[data-testid="stDataEditor"] canvas{font-family:Inter,Arial,sans-serif!important}
 [data-testid="stDataFrame"] [role="columnheader"],[data-testid="stDataEditor"] [role="columnheader"]{font-weight:800!important;text-transform:uppercase!important;letter-spacing:.025em!important;background:#f8fafc!important}
 [data-testid="stDataFrame"] [role="gridcell"],[data-testid="stDataEditor"] [role="gridcell"]{border-color:#eef1f5!important}
-[data-testid="stVerticalBlockBorderWrapper"]{border-color:#e5e8ee!important;border-radius:14px!important;background:#fff!important;box-shadow:0 3px 12px rgba(15,23,42,.035)}
+[data-testid="stVerticalBlockBorderWrapper"]{border-color:#e5e8ee!important;border-radius:14px!important;background:#fff!important;box-shadow:0 3px 12px rgba(15,23,42,.035)!important}
 [data-testid="stTabs"] button{font-weight:800!important;text-transform:uppercase!important;letter-spacing:.015em!important}
-.kpi-label{text-transform:uppercase;font-size:.72rem!important;font-weight:900!important;letter-spacing:.025em}
-.kpi-delta{text-transform:uppercase;font-size:.66rem!important;font-weight:700!important;letter-spacing:.02em}
-div[data-testid="stMarkdownContainer"] h1,
-div[data-testid="stMarkdownContainer"] h2,
-div[data-testid="stMarkdownContainer"] h3,
-div[data-testid="stMarkdownContainer"] h4{text-transform:uppercase}
-[data-testid="stAlert"]{border-radius:12px!important;box-shadow:0 3px 12px rgba(15,23,42,.035)}
-button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:var(--p)!important;border-color:var(--p)!important;color:#fff!important}.footer{text-align:center;color:#9298a1;font-size:.72rem;padding-top:1.2rem}
-@media (max-width:900px){.block-container{padding-top:2rem!important;padding-left:1rem!important;padding-right:1rem!important;padding-bottom:2rem!important}.setta-logo-card{min-height:105px;margin-bottom:1.8rem;padding:.9rem 1rem}.setta-logo-card img{max-width:170px;max-height:72px}.app-title{font-size:2rem!important;line-height:1.12!important}.app-sub{font-size:.86rem!important;margin-bottom:1.35rem!important}.section-title{font-size:1.14rem!important}div[data-testid="stHorizontalBlock"]{flex-wrap:wrap!important}div[data-testid="stHorizontalBlock"]>div[data-testid="stColumn"]{min-width:100%!important;width:100%!important;flex:1 1 100%!important}.kpi-card{min-height:112px;margin-bottom:.12rem}.api-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-
+div[data-testid="stMarkdownContainer"] h1,div[data-testid="stMarkdownContainer"] h2,div[data-testid="stMarkdownContainer"] h3,div[data-testid="stMarkdownContainer"] h4{text-transform:uppercase}
+[data-testid="stAlert"]{border-radius:12px!important;box-shadow:0 3px 12px rgba(15,23,42,.035)!important}
+button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:#111827!important;border-color:#111827!important;color:#fff!important}
+.footer{text-align:center;color:#9298a1;font-size:.72rem;padding-top:1.2rem}
 .dashboard-kpi-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.85rem;margin:.15rem 0 .25rem}
 .dashboard-kpi{--kpi-accent:#2563eb;--kpi-soft:#eff6ff;position:relative;min-width:0;min-height:142px;padding:1rem 1.05rem .9rem;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 5px 18px rgba(15,23,42,.055);overflow:hidden;display:flex;flex-direction:column}
 .dashboard-kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--kpi-accent)}
@@ -503,28 +489,7 @@ button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:var
 .dashboard-kpi-progress span{display:block;height:100%;border-radius:999px;background:var(--kpi-accent)}
 @media(max-width:1100px){.dashboard-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.dashboard-kpi-grid{grid-template-columns:1fr;gap:.65rem}.dashboard-kpi{min-height:126px;padding:.9rem}.dashboard-kpi-label{min-height:0}.dashboard-kpi-value{font-size:1.75rem}}
-div[data-testid="stMarkdownContainer"] h1,
-div[data-testid="stMarkdownContainer"] h2,
-div[data-testid="stMarkdownContainer"] h3,
-div[data-testid="stMarkdownContainer"] h4{text-transform:uppercase}
-[data-testid="stAlert"]{border-radius:12px!important;box-shadow:0 3px 12px rgba(15,23,42,.035)}
-button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:var(--p)!important;border-color:var(--p)!important;color:#fff!important}.footer{text-align:center;color:#9298a1;font-size:.72rem;padding-top:1.2rem}
-
-/* INVENTÁRIO — preserva recolhimento integral da sidebar sem alterar o padrão visual NFS */
-section[data-testid="stSidebar"][aria-expanded="false"]{
-  width:0!important;min-width:0!important;max-width:0!important;flex-basis:0!important;
-  margin:0!important;border:0!important;overflow:hidden!important;
-}
-[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="false"]) [data-testid="stMain"],
-[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="false"]) .stMain,
-[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="false"]) .main{
-  width:100%!important;
-  max-width:100%!important;
-  min-width:0!important;
-  flex:1 1 100%!important;
-  margin-left:0!important;
-  overflow-x:hidden!important;
-}
+@media(max-width:900px){.section-title{font-size:1.14rem!important}.api-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 """,
     unsafe_allow_html=True,
@@ -700,278 +665,10 @@ def render_api_monitor():
  if st.button('REPROCESSAR FONTES',use_container_width=True,key='reprocess_inventory_sources'):
   if sync_central_inventory(force=True):st.rerun()
 
-if sync_central_inventory(force=False):
- st.rerun()
 
 
-st.markdown(
- """
- <style>
- /* ============================================================
-    SIDEBAR SETTA V1 — ESPELHO VISUAL DO CONVERSOR MRP
-    26 / 20 / 8 / 42 / 2 / 20 / 20 / 8 px
-    ============================================================ */
- section[data-testid="stSidebar"]{
-  background:#fff!important;
-  border-right:1px solid #e8ebf0!important;
-  width:260px!important;
-  min-width:260px!important;
-  max-width:260px!important;
-  flex:0 0 260px!important;
-  flex-basis:260px!important;
-  overflow:hidden!important;
- }
- section[data-testid="stSidebar"]>div{
-  width:260px!important;
-  min-width:260px!important;
-  max-width:260px!important;
-  box-sizing:border-box!important;
- }
- section[data-testid="stSidebar"] .block-container{
-  width:260px!important;
-  min-width:260px!important;
-  max-width:260px!important;
-  box-sizing:border-box!important;
-  padding:26px 16px 0 16px!important;
- }
- section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{
-  gap:0!important;
-  row-gap:0!important;
- }
- section[data-testid="stSidebar"] div[data-testid="stElementContainer"]{
-  margin:0!important;
-  padding:0!important;
-  min-height:0!important;
- }
-
- /* cartão superior */
- section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-brand){
-  margin:0 0 20px 0!important;
- }
- section[data-testid="stSidebar"] .sidebar-brand{
-  width:100%!important;
-  margin:0!important;
-  padding:14px 16px!important;
-  background:#f8fafc!important;
-  border:1px solid #e5e8ee!important;
-  border-radius:12px!important;
-  box-sizing:border-box!important;
- }
- section[data-testid="stSidebar"] .sidebar-brand-title{
-  margin:0!important;
-  padding:0!important;
-  font-size:15px!important;
-  line-height:18px!important;
-  font-weight:800!important;
-  color:#111827!important;
-  letter-spacing:-.01em!important;
- }
- section[data-testid="stSidebar"] .sidebar-brand-sub{
-  margin:3px 0 0 0!important;
-  padding:0!important;
-  font-size:12px!important;
-  line-height:16px!important;
-  font-weight:400!important;
-  color:#6b7280!important;
- }
-
- /* títulos */
- section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-section-label){
-  height:15px!important;
-  min-height:15px!important;
-  max-height:15px!important;
- }
- section[data-testid="stSidebar"] .sidebar-section-label{
-  display:block!important;
-  height:15px!important;
-  margin:0!important;
-  padding:0!important;
-  color:#374151!important;
-  font-size:12px!important;
-  line-height:15px!important;
-  font-weight:800!important;
-  text-transform:uppercase!important;
-  letter-spacing:.055em!important;
- }
-
- /* NAVEGAÇÃO -> primeiro botão = 8px */
- section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-nav-gap-fixed){
-  display:block!important;
-  height:8px!important;
-  min-height:8px!important;
-  max-height:8px!important;
- }
- section[data-testid="stSidebar"] .sidebar-nav-gap-fixed{
-  display:block!important;
-  width:100%!important;
-  height:8px!important;
-  min-height:8px!important;
-  max-height:8px!important;
-  margin:0!important;
-  padding:0!important;
- }
-
- /* botões = 42px; gap = 2px */
- section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]){
-  height:44px!important;
-  min-height:44px!important;
-  max-height:44px!important;
-  margin:0!important;
-  padding:0 0 2px 0!important;
-  box-sizing:border-box!important;
- }
- section[data-testid="stSidebar"] div[data-testid="stButton"]{
-  width:100%!important;
-  height:42px!important;
-  min-height:42px!important;
-  max-height:42px!important;
-  margin:0!important;
-  padding:0!important;
- }
- section[data-testid="stSidebar"] div[data-testid="stButton"] button{
-  position:relative!important;
-  display:flex!important;
-  align-items:center!important;
-  justify-content:flex-start!important;
-  width:100%!important;
-  height:42px!important;
-  min-height:42px!important;
-  max-height:42px!important;
-  margin:0!important;
-  padding:0 12px 0 24px!important;
-  border:1px solid transparent!important;
-  border-radius:10px!important;
-  background:transparent!important;
-  box-shadow:none!important;
-  color:#374151!important;
-  font-size:13px!important;
-  line-height:16px!important;
-  font-weight:500!important;
-  text-align:left!important;
-  box-sizing:border-box!important;
- }
- section[data-testid="stSidebar"] div[data-testid="stButton"] button > div,
- section[data-testid="stSidebar"] div[data-testid="stButton"] button p{
-  width:100%!important;
-  margin:0!important;
-  padding:0!important;
-  text-align:left!important;
-  line-height:16px!important;
- }
- section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]{
-  background:transparent!important;
-  border-color:transparent!important;
-  color:#374151!important;
- }
- section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover{
-  background:#f8fafc!important;
-  border-color:#e5e7eb!important;
-  color:#111827!important;
- }
- section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]{
-  background:#111827!important;
-  border-color:#111827!important;
-  color:#fff!important;
-  box-shadow:0 5px 14px rgba(17,24,39,.14)!important;
-  font-weight:700!important;
- }
- section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] p{
-  color:#fff!important;
-  font-weight:700!important;
- }
- section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]::before{
-  content:""!important;
-  position:absolute!important;
-  left:7px!important;
-  top:50%!important;
-  width:4px!important;
-  height:20px!important;
-  border-radius:999px!important;
-  background:#ef4444!important;
-  transform:translateY(-50%)!important;
- }
-
- /* último botão -> linha = 20px; linha -> STATUS GERAL = 20px */
- section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-divider-fixed){
-  height:39px!important;
-  min-height:39px!important;
-  max-height:39px!important;
-  padding:18px 0 20px 0!important;
-  box-sizing:border-box!important;
- }
- section[data-testid="stSidebar"] .sidebar-divider-fixed{
-  display:block!important;
-  width:100%!important;
-  height:1px!important;
-  min-height:1px!important;
-  max-height:1px!important;
-  margin:0!important;
-  padding:0!important;
-  background:#d1d5db!important;
- }
-
- /* STATUS GERAL -> cartão = 8px */
- section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.sidebar-status-gap-fixed){
-  display:block!important;
-  height:8px!important;
-  min-height:8px!important;
-  max-height:8px!important;
- }
- section[data-testid="stSidebar"] .sidebar-status-gap-fixed{
-  display:block!important;
-  width:100%!important;
-  height:8px!important;
-  min-height:8px!important;
-  max-height:8px!important;
-  margin:0!important;
-  padding:0!important;
- }
-
- /* cartão de status */
- section[data-testid="stSidebar"] .sidebar-status-card{
-  width:100%!important;
-  margin:0!important;
-  padding:12px 14px!important;
-  background:#f8fafc!important;
-  border:1px solid #e5e8ee!important;
-  border-radius:10px!important;
-  box-sizing:border-box!important;
-  color:#6b7280!important;
- }
- section[data-testid="stSidebar"] .sidebar-status-name{
-  margin:0!important;
-  padding:0!important;
-  font-size:11px!important;
-  line-height:14px!important;
-  font-weight:800!important;
-  color:#64748b!important;
-  text-transform:uppercase!important;
-  letter-spacing:.025em!important;
- }
- section[data-testid="stSidebar"] .sidebar-status-value{
-  margin:4px 0 0 0!important;
-  padding:0!important;
-  font-size:13px!important;
-  line-height:16px!important;
-  font-weight:900!important;
-  text-transform:uppercase!important;
- }
- section[data-testid="stSidebar"] .sidebar-status-value.status-ok{color:#16a34a!important}
- section[data-testid="stSidebar"] .sidebar-status-value.status-warning{color:#f59e0b!important}
- section[data-testid="stSidebar"] .sidebar-status-value.status-error{color:#ef4444!important}
- section[data-testid="stSidebar"] .sidebar-status-meta{
-  margin:6px 0 0 0!important;
-  padding:0!important;
-  color:#6b7280!important;
-  font-size:11px!important;
-  line-height:15px!important;
-  font-weight:400!important;
-  text-transform:uppercase!important;
- }
- </style>
- """,
- unsafe_allow_html=True,
-)
+# SETTA UI — shell canônico do Conversor MRP
+setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
 
 # Sidebar — espelho estrutural do Controle de NFs
 _INV_NAV_PAGES=['Dashboard','Inventário Rotativo','Banco de Dados','Registro','Reportar Inconsistências','Configurações']
@@ -979,6 +676,7 @@ _INV_NAV_PAGES=['Dashboard','Inventário Rotativo','Banco de Dados','Registro','
 def _set_inventory_page(target):
  if target in _INV_NAV_PAGES:
   st.session_state.section=target
+  _setta_close_sidebar()
 
 def _current_inventory_page():
  value=str(st.session_state.get('section') or 'Dashboard')
@@ -996,34 +694,18 @@ with st.sidebar:
   '<div class="sidebar-section-label">NAVEGAÇÃO</div>',
   unsafe_allow_html=True
  )
- st.markdown(
-  '<div class="sidebar-nav-gap-fixed"></div>',
-  unsafe_allow_html=True
- )
 
  _current=_current_inventory_page()
- for _nav_page in _INV_NAV_PAGES:
+ for _nav_index,_nav_page in enumerate(_INV_NAV_PAGES):
   st.button(
    str(_nav_page).upper(),
-   key='inventory_sidebar_nav_'+str(_nav_page).lower().replace(' ','_').replace('ê','e').replace('ç','c'),
+   key=f'setta_nav_{_nav_index}',
    type='primary' if _nav_page==_current else 'secondary',
    use_container_width=True,
    on_click=_set_inventory_page,
    args=(_nav_page,),
   )
 
- st.markdown(
-  '<div class="sidebar-divider-fixed"></div>',
-  unsafe_allow_html=True
- )
- st.markdown(
-  '<div class="sidebar-section-label">STATUS GERAL</div>',
-  unsafe_allow_html=True
- )
- st.markdown(
-  '<div class="sidebar-status-gap-fixed"></div>',
-  unsafe_allow_html=True
- )
 
  try:
   _sidebar_bundle=central_data.bundle_state()
@@ -1072,7 +754,7 @@ with st.sidebar:
   f'<div>QNT DE DOCUMENTOS: {_sidebar_docs_ok}/{_sidebar_docs_total}</div>'
  )
  st.markdown(
-  f'<div class="sidebar-status-card"><div class="sidebar-status-name">GESTÃO DE ESTOQUE</div><div class="sidebar-status-value {_sidebar_status_class}">{_sidebar_value}</div><div class="sidebar-status-meta">{_sidebar_meta}</div></div>',
+  f'<div class="sidebar-divider"></div><div class="sidebar-section-label">STATUS GERAL</div><div class="sidebar-status-card"><div class="sidebar-status-name">GESTÃO DE ESTOQUE</div><div class="sidebar-status-value {_sidebar_status_class}">{_sidebar_value}</div><div class="sidebar-status-meta">{_sidebar_meta}</div></div>',
   unsafe_allow_html=True
  )
 
@@ -1084,12 +766,27 @@ if st.session_state.get('_operational_persistence_error'):
   + str(st.session_state.get('_operational_persistence_error'))
  )
 
+with st.container(key='setta_top_controls'):
+ st.button(
+  '☰',
+  key='setta_drawer_toggle',
+  help='Abrir/fechar menu',
+  use_container_width=True,
+  on_click=_setta_toggle_sidebar,
+ )
+
 _main_logo=logo_uri()
 _logo_html=(f'<img src="{_main_logo}" alt="SETTA">' if _main_logo else '<div style="font-size:2rem;font-weight:800;color:#202124">SETTA</div>')
 st.markdown(f'<div class="setta-logo-card">{_logo_html}</div>',unsafe_allow_html=True)
 st.markdown('<h1 class="app-title">GESTÃO DE ESTOQUE | SETTA</h1>',unsafe_allow_html=True)
 st.markdown('<p class="app-sub">INVENTÁRIO ROTATIVO • ACURÁCIA • CONTAGENS • HISTÓRICO</p>',unsafe_allow_html=True)
 st.caption(f'BUILD DE DIAGNÓSTICO · {BUILD_DIAGNOSTICO}')
+
+_render_setta_auth_gate()
+
+if sync_central_inventory(force=False):
+ st.rerun()
+
 active=st.session_state.section
 
 # Dashboard
