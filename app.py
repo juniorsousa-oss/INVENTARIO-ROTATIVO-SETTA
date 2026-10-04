@@ -214,6 +214,10 @@ def _session_profile():
  role=str((user or {}).get('role') or '').strip().lower()
  return 'Gestor' if role in {'admin','gestor'} else 'Operador'
 
+def _session_auth_token():
+ user=_auth_user()
+ return str((user or {}).get('inventory_token') or '').strip()
+
 def _authenticate_user(login,password):
  user=setta_auth.authenticate(central_data.supabase_key(),login,password)
  if not user:
@@ -560,6 +564,7 @@ def close_inv(inv):
    inv,
    cycle_codes,
    report_updates,
+   _session_auth_token(),
   )
 
   st.session_state.inventories[doc]=inv
@@ -572,7 +577,10 @@ def close_inv(inv):
   st.session_state.inventories[doc]=before_inv
   st.session_state.cycles=before_cycles
   st.session_state.reports=before_reports
-  st.session_state['_operational_persistence_error']=str(exc)
+  message=str(exc)
+  if 'SESSION_INVALID_OR_EXPIRED' in message or 'AUTH_REQUIRED' in message:
+   st.session_state.pop('_setta_auth_user',None)
+  st.session_state['_operational_persistence_error']=message
   return False
 
 
@@ -785,6 +793,10 @@ with st.sidebar:
    unsafe_allow_html=True,
   )
   if st.button('SAIR',key='setta_auth_logout',use_container_width=True):
+   try:
+    setta_auth.logout(central_data.supabase_key(),_session_auth_token())
+   except Exception:
+    pass
    st.session_state.pop('_setta_auth_user',None)
    st.rerun()
  else:
