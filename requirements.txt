@@ -1,9 +1,8 @@
-streamlit>=1.49,<2
-pandas>=2.2
-openpyxl>=3.1
-xlrd>=2.0
-firebase-admin>=6.5
-
-requests>=2.32,<3
-Pillow>=10,<12
-# deploy-refresh 2026-10-02-1109
+streamlit==1.65.0
+pandas==3.0.6
+openpyxl==3.1.5
+xlrd==2.0.2
+firebase-admin==7.7.0
+requests==2.34.2
+Pillow==11.3.0
+altair==6.3.0
