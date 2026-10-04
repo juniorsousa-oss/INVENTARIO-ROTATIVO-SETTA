@@ -491,12 +491,7 @@ def build_db(an,end,eligible):
  saldo=e[e.apto].groupby('codigo',as_index=False).quantidade.sum().rename(columns={'quantidade':'saldo_apto'});d=a.merge(saldo,on='codigo',how='outer');d.saldo_apto=d.saldo_apto.fillna(0.0);d.qtd_analitico=d.qtd_analitico.fillna(0.0);d.valor_k=d.valor_k.fillna(0.0);d.valor_unitario=d.valor_unitario.fillna(0.0);d.descricao=d.descricao.fillna('SEM DESCRIÇÃO NO ESTOQUE ANALÍTICO');d['valor_total']=d.saldo_apto*d.valor_unitario;act=(d.saldo_apto>0)&(d.valor_unitario>0);d['classificacao_r_un']=pd.NA;d['classificacao_r_total']=pd.NA;d.loc[act,'classificacao_r_un']=d.loc[act].valor_unitario.rank(method='first',ascending=False).astype(int);d.loc[act,'classificacao_r_total']=d.loc[act].valor_k.rank(method='first',ascending=False).astype(int);d=d.sort_values(['classificacao_r_total','codigo'],na_position='last').reset_index(drop=True);e=e.merge(d[['codigo','valor_unitario']],on='codigo',how='left');return d,e
 
 def nextdoc():
- today=datetime.now().strftime('%d%m%Y');q=1
- for x in st.session_state.inventories.values():
-  if x.get('documento','').startswith(today+'-'):
-   try:q=max(q,int(x['documento'].split('-')[-1])+1)
-   except:pass
- return f'{today}-{q:03d}'
+ return central_data.next_inventory_document()
 def cycle():
  codes=st.session_state.db.loc[st.session_state.db.saldo_apto>0,'codigo'].astype(str);return min([int(st.session_state.cycles.get(c,0)) for c in codes],default=0)+1
 def select_products(db,n,urgent_codes=None):
@@ -525,43 +520,93 @@ def make_rows(sel,pos):
   for _,r in pos[(pos.codigo==p.codigo)&pos.apto].iterrows():
    rows.append({'id':uuid.uuid4().hex[:12],'codigo':str(p.codigo),'descricao':str(p.descricao),'endereco':str(r.endereco),'qtd_sistema':float(r.quantidade),'valor_unitario':float(p.valor_unitario),'contagens':[],'status':'PENDENTE','contagem_final':None,'resultado_final':'','comentario_final':'SC'})
  return rows
-def persist_inv(inv):st.session_state.inventories[inv['documento']]=inv;_persist_operational('inventories',st.session_state.inventories)
-def addcount(r,q,cm,stage):r['contagens'].append({'etapa':stage,'quantidade':float(q),'comentario':cm.strip() if cm.strip() else 'SC','data':datetime.now().strftime('%d/%m/%Y %H:%M:%S')})
+def persist_inv(inv):
+ doc=str(inv.get('documento') or '').strip()
+ if not doc:return False
+ st.session_state.inventories[doc]=inv
+ save('inventories',st.session_state.inventories)
+ try:
+  central_data.save_inventory_document(doc,inv)
+  st.session_state.pop('_operational_persistence_error',None)
+  return True
+ except Exception as exc:
+  st.session_state['_operational_persistence_error']=str(exc)
+  return False
+
+def addcount(r,q,cm,stage):
+ stamp=now_local()
+ r['contagens'].append({
+  'etapa':stage,
+  'quantidade':float(q),
+  'comentario':cm.strip() if cm.strip() else 'SC',
+  'data':stamp.strftime('%d/%m/%Y %H:%M:%S'),
+  'timestamp':stamp.isoformat(),
+  'usuario':_session_operator(),
+  'perfil':_session_profile(),
+ })
+
 def last(r):return r['contagens'][-1]['quantidade'] if r['contagens'] else None
 def diff(r,q):return float(q)-float(r['qtd_sistema'])
 def divergencia_valor(r,q):return diff(r,q)*float(r['valor_unitario'])
 def divergência(r,q):return abs(divergencia_valor(r,q))
 def sev(v):return 'BAIXO' if v<=100 else 'MÉDIO' if v<=1000 else 'ALTO'
-def mark_cycle(inv):
- if inv.get('ciclo_marcado'):return
- for c in {r['codigo'] for r in inv['rows'] if r['contagens']}:st.session_state.cycles[c]=int(st.session_state.cycles.get(c,0))+1
- inv['ciclo_marcado']=True;_persist_operational('cycles',st.session_state.cycles);persist_inv(inv)
+
 def close_inv(inv):
- for r in inv['rows']:
-  if r['contagem_final'] is None:r['contagem_final']=last(r)
-  if not r['resultado_final']:r['resultado_final']='ENCERRADO PELO GESTOR'
-  r['status']='FINALIZADO'
- inv['status']='FECHADO';mark_cycle(inv)
- for rep in st.session_state.reports.values():
-  if rep.get('status')=='ABERTO' and any(str(r['codigo'])==str(rep.get('codigo')) and str(r['endereco'])==str(rep.get('endereco')) for r in inv['rows']):
-   rep['status']='ENCERRADO'
-   rep['inventario_doc']=inv['documento']
-   rep['encerrado_em']=datetime.now().strftime('%d/%m/%Y %H:%M:%S')
- persist_reports();persist_inv(inv)
+ doc=str(inv.get('documento') or '').strip()
+ before_inv=copy.deepcopy(inv)
+ before_cycles=copy.deepcopy(st.session_state.cycles)
+ before_reports=copy.deepcopy(st.session_state.reports)
 
+ try:
+  for r in inv['rows']:
+   if r['contagem_final'] is None:r['contagem_final']=last(r)
+   if not r['resultado_final']:r['resultado_final']='ENCERRADO PELO GESTOR'
+   r['status']='FINALIZADO'
 
-def _central_frames():
- bundle=central_data.bundle_state()
- frames={}
- metas={}
- for key in ('analitico','endereco'):
-  meta=bundle.get(key) or {}
-  if not bool(meta.get('available')):raise RuntimeError(f'FONTE {key.upper()} NÃO DISPONÍVEL NA CENTRAL.')
-  token=central_data.source_token(meta)
-  frame,remote=central_data.download_source_frame(key,token,header=1)
-  frames[key]=frame
-  metas[key]=meta
- return frames,metas
+  cycle_codes=[]
+  if not inv.get('ciclo_marcado'):
+   cycle_codes=sorted({str(r['codigo']) for r in inv['rows'] if r['contagens']})
+   for code in cycle_codes:
+    st.session_state.cycles[code]=int(st.session_state.cycles.get(code,0))+1
+   inv['ciclo_marcado']=True
+
+  inv['status']='FECHADO'
+  inv['encerrado_em']=now_local().isoformat()
+  inv['encerrado_por']=_session_operator()
+
+  report_updates={}
+  for rid,rep in st.session_state.reports.items():
+   if rep.get('status')=='ABERTO' and any(
+    str(r['codigo'])==str(rep.get('codigo'))
+    and str(r['endereco'])==str(rep.get('endereco'))
+    for r in inv['rows']
+   ):
+    rep['status']='ENCERRADO'
+    rep['inventario_doc']=doc
+    rep['encerrado_em']=now_local().isoformat()
+    rep['encerrado_por']=_session_operator()
+    report_updates[str(rid)]=rep
+
+  central_data.close_inventory_atomic(
+   doc,
+   inv,
+   cycle_codes,
+   report_updates,
+  )
+
+  st.session_state.inventories[doc]=inv
+  save('inventories',st.session_state.inventories)
+  save('cycles',st.session_state.cycles)
+  save('reports',st.session_state.reports)
+  st.session_state.pop('_operational_persistence_error',None)
+  return True
+ except Exception as exc:
+  st.session_state.inventories[doc]=before_inv
+  st.session_state.cycles=before_cycles
+  st.session_state.reports=before_reports
+  st.session_state['_operational_persistence_error']=str(exc)
+  return False
+
 
 @st.cache_data(show_spinner=False,ttl=3600,max_entries=4)
 def _cached_inventory_snapshot(analitico_token,endereco_token):
