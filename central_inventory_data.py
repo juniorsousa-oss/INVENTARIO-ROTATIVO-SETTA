@@ -245,7 +245,7 @@ def commit_sync(
     sync_state.clear()
 
 
-@st.cache_data(show_spinner=False, ttl=60, max_entries=2)
+@st.cache_data(show_spinner=False, ttl=900, max_entries=2)
 def load_visual_config() -> dict:
     # A identidade visual é opcional. Se a API estiver indisponível ou a ação
     # visual_get ainda não estiver publicada, o aplicativo deve continuar
@@ -263,6 +263,7 @@ def load_visual_config() -> dict:
         "logo_mime": row.get("logo_mime") or "image/png",
         "favicon_data": row.get("favicon_data") or "",
         "favicon_mime": row.get("favicon_mime") or "image/png",
+        "ui_config": row.get("ui_config") or {},
     }
 
 
