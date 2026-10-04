@@ -38,7 +38,7 @@ def _setta_toggle_sidebar():
 def _setta_close_sidebar():
  st.session_state['_setta_sidebar_open']=False
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261004-A'
+BUILD_DIAGNOSTICO = 'baseline-setta-20261004-B'
 DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
