@@ -93,7 +93,7 @@ if "SIDEBAR SETTA V1" in app:
 if app.count("<style>") != 1:
     fail(f"Quantidade inesperada de blocos CSS internos: {app.count('<style>')}")
 
-for token in ["operahub_bootstrap", "operahub_auth_user"]:
+for token in ["operahub_bootstrap", "inventory_login", "inventory_logout"]:
     if token not in auth:
         fail(f"Contrato de autenticação ausente: {token}")
 
