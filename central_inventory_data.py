@@ -108,6 +108,56 @@ def save_operational_state(state_key: str, value: Any) -> dict:
     ).get("data") or {}
 
 
+def next_inventory_document() -> str:
+    data = api_call("inventory_next_document", timeout=20).get("data") or {}
+    documento = str(data.get("documento") or "").strip()
+    if not documento:
+        raise RuntimeError("DOCUMENTO_NAO_GERADO")
+    return documento
+
+
+def save_inventory_document(documento: str, document: dict) -> dict:
+    return api_call(
+        "inventory_document_upsert",
+        {"documento": str(documento), "document": document or {}},
+        timeout=45,
+    ).get("data") or {}
+
+
+def save_inventory_report(report_id: str, report: dict) -> dict:
+    return api_call(
+        "inventory_report_upsert",
+        {"report_id": str(report_id), "report": report or {}},
+        timeout=45,
+    ).get("data") or {}
+
+
+def merge_inventory_cycles(values: dict) -> dict:
+    return api_call(
+        "inventory_cycles_merge",
+        {"values": values or {}},
+        timeout=45,
+    ).get("data") or {}
+
+
+def close_inventory_atomic(
+    documento: str,
+    document: dict,
+    cycle_codes: list[str],
+    reports: dict,
+) -> dict:
+    return api_call(
+        "inventory_close_atomic",
+        {
+            "documento": str(documento),
+            "document": document or {},
+            "cycle_codes": [str(x) for x in (cycle_codes or [])],
+            "reports": reports or {},
+        },
+        timeout=60,
+    ).get("data") or {}
+
+
 def derived_status(keys: list[str]) -> dict[str, dict]:
     rows = api_call("derived_status", {"keys": keys}, timeout=30).get("data") or []
     return {
