@@ -634,6 +634,8 @@ def sync_central_inventory(force=False):
 
   bundle=central_data.bundle_state()
   states=central_data.sync_state()
+  st.session_state['_central_inventory_bundle']=bundle
+  st.session_state['_central_inventory_states']=states
 
   metas={}
   tokens={}
@@ -798,55 +800,13 @@ with st.sidebar:
    except Exception as exc:
     st.error(f'Falha ao autenticar: {exc}')
 
- try:
-  _sidebar_bundle=central_data.bundle_state()
-  _sidebar_states=central_data.sync_state()
- except Exception:
-  _sidebar_bundle={}
-  _sidebar_states={}
-
- _sidebar_docs_total=2
- _sidebar_docs_ok=0
- _sidebar_has_error=False
- _sidebar_latest=None
-
- for _source_key in ('analitico','endereco'):
-  _meta=_sidebar_bundle.get(_source_key) or {}
-  _state=_sidebar_states.get(_source_key) or {}
-  _state_status=str(_state.get('status') or '').upper()
-  if bool(_meta.get('available')) and _state_status=='ATUALIZADO':
-   _sidebar_docs_ok+=1
-  if _state_status=='ERRO':
-   _sidebar_has_error=True
-  _raw_when=str(_state.get('synced_at') or _meta.get('last_update_at') or '').strip()
-  if _raw_when:
-   _stamp=pd.to_datetime(_raw_when,errors='coerce',utc=True)
-   if not pd.isna(_stamp) and (_sidebar_latest is None or _stamp>_sidebar_latest):
-    _sidebar_latest=_stamp
-
- _sidebar_last_update=(
-  central_data.format_dt(_sidebar_latest.isoformat())
-  if _sidebar_latest is not None
-  else '—'
- )
-
- if _sidebar_has_error:
-  _sidebar_value='ERRO'
-  _sidebar_status_class='status-error'
- elif _sidebar_docs_ok==_sidebar_docs_total:
-  _sidebar_value='ATUALIZADO'
-  _sidebar_status_class='status-ok'
- else:
-  _sidebar_value='ATENÇÃO'
-  _sidebar_status_class='status-warning'
-
- _sidebar_meta=(
-  f'<div>ÚLTIMA ATUALIZAÇÃO: {_sidebar_last_update}</div>'
-  f'<div>QNT DE DOCUMENTOS: {_sidebar_docs_ok}/{_sidebar_docs_total}</div>'
- )
- st.markdown(
-  f'<div class="sidebar-divider"></div><div class="sidebar-section-label">STATUS GERAL</div><div class="sidebar-status-card"><div class="sidebar-status-name">GESTÃO DE ESTOQUE</div><div class="sidebar-status-value {_sidebar_status_class}">{_sidebar_value}</div><div class="sidebar-status-meta">{_sidebar_meta}</div></div>',
-  unsafe_allow_html=True
+ _sidebar_status_slot=st.empty()
+ _sidebar_status_slot.markdown(
+  '<div class="sidebar-divider"></div><div class="sidebar-section-label">STATUS GERAL</div>'
+  '<div class="sidebar-status-card"><div class="sidebar-status-name">GESTÃO DE ESTOQUE</div>'
+  '<div class="sidebar-status-value status-warning">ATUALIZANDO</div>'
+  '<div class="sidebar-status-meta">SINCRONIZANDO FONTES...</div></div>',
+  unsafe_allow_html=True,
  )
 
 
@@ -881,6 +841,40 @@ st.caption(f'BUILD DE DIAGNÓSTICO · {BUILD_DIAGNOSTICO}')
 _render_setta_auth_gate()
 
 sync_central_inventory(force=False)
+
+_sidebar_bundle=st.session_state.get('_central_inventory_bundle') or {}
+_sidebar_states=st.session_state.get('_central_inventory_states') or {}
+_sidebar_docs_total=2
+_sidebar_docs_ok=0
+_sidebar_has_error=False
+_sidebar_latest=None
+for _source_key in ('analitico','endereco'):
+ _meta=_sidebar_bundle.get(_source_key) or {}
+ _state=_sidebar_states.get(_source_key) or {}
+ _state_status=str(_state.get('status') or '').upper()
+ if bool(_meta.get('available')) and _state_status=='ATUALIZADO':_sidebar_docs_ok+=1
+ if _state_status=='ERRO':_sidebar_has_error=True
+ _raw_when=str(_state.get('synced_at') or _meta.get('last_update_at') or '').strip()
+ if _raw_when:
+  _stamp=pd.to_datetime(_raw_when,errors='coerce',utc=True)
+  if not pd.isna(_stamp) and (_sidebar_latest is None or _stamp>_sidebar_latest):_sidebar_latest=_stamp
+
+_sidebar_last_update=central_data.format_dt(_sidebar_latest.isoformat()) if _sidebar_latest is not None else '—'
+if _sidebar_has_error:
+ _sidebar_value='ERRO';_sidebar_status_class='status-error'
+elif _sidebar_docs_ok==_sidebar_docs_total:
+ _sidebar_value='ATUALIZADO';_sidebar_status_class='status-ok'
+else:
+ _sidebar_value='ATENÇÃO';_sidebar_status_class='status-warning'
+
+_sidebar_status_slot.markdown(
+ f'<div class="sidebar-divider"></div><div class="sidebar-section-label">STATUS GERAL</div>'
+ f'<div class="sidebar-status-card"><div class="sidebar-status-name">GESTÃO DE ESTOQUE</div>'
+ f'<div class="sidebar-status-value {_sidebar_status_class}">{_sidebar_value}</div>'
+ f'<div class="sidebar-status-meta"><div>ÚLTIMA ATUALIZAÇÃO: {_sidebar_last_update}</div>'
+ f'<div>QNT DE DOCUMENTOS: {_sidebar_docs_ok}/{_sidebar_docs_total}</div></div></div>',
+ unsafe_allow_html=True,
+)
 
 active=st.session_state.section
 
