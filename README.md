@@ -13,15 +13,15 @@ Ambiente validado: Python 3.11 com as versões fixadas em `requirements.txt`.
 
 ## Padrão SETTA
 
-O aplicativo utiliza o shell oficial extraído do Conversor MRP:
+O aplicativo utiliza o shell oficial SETTA:
 
 - moldura externa e rolagem interna;
-- menu superior com botão de abertura;
-- sidebar operacional;
-- header/logo via configuração global `setta_global`;
-- comportamento responsivo desktop/mobile.
+- botão superior e drawer lateral;
+- header/logo central;
+- responsividade desktop/mobile;
+- sidebar com sessão e status das fontes.
 
-O shell fica isolado em `setta_shell.py`. O conteúdo interno do Inventário continua independente.
+O shell fica isolado em `setta_shell.py`. A interface operacional do Inventário permanece independente.
 
 ## Módulos
 
@@ -32,52 +32,97 @@ O shell fica isolado em `setta_shell.py`. O conteúdo interno do Inventário con
 - Reportar Inconsistências
 - Configurações
 
-## Fontes de dados
+## Fontes e desempenho
 
-A Central SETTA fornece:
+A Central SETTA fornece `analitico`, `endereco` e a base derivada `estoque_tratado`.
 
-- `analitico`;
-- `endereco`;
-- base derivada `estoque_tratado`.
+A base operacional da sessão é reconstruída por ANALÍTICO + ENDEREÇO e mantida em cache por `version_token`. O app não lê mais milhares de registros do Firestore no caminho crítico de cada sessão.
 
-O aplicativo compara tokens de versão antes de reprocessar as fontes e registra o status por consumidor em `setta_consumer_sync_state`.
+Fluxo atual:
+
+`Central SETTA -> snapshot em cache -> sessão Streamlit`
+
+Firestore e SQLite permanecem somente como contingência de leitura. O SQLite utiliza diretório temporário e não deve ser considerado persistência definitiva.
+
+A identidade visual usa `visual_shell_get`, que transfere apenas logo e `ui_config`, sem carregar o favicon em base64 no startup.
 
 ## Persistência operacional
 
-O estado operacional principal de configurações, inventários, ciclos e inconsistências utiliza o Supabase por meio da ação `inventory_state_get/set`.
+O Supabase é a fonte persistente de configurações, inventários, ciclos e inconsistências.
 
-A base consolidada de estoque, posições e endereços habilitados ainda possui contingência em Firestore/SQLite. Essa camada é mantida nesta baseline para evitar alteração funcional durante a padronização e será avaliada separadamente antes de qualquer remoção.
+As gravações principais não substituem mais o JSON operacional completo:
 
-## Autenticação
+- `inventory_document_upsert` grava somente o documento alterado;
+- `inventory_report_upsert` grava somente a inconsistência alterada;
+- `inventory_cycles_merge` é usado na migração de ciclos antigos;
+- `inventory_close_atomic` encerra documento, ciclos e inconsistências na mesma transação;
+- `inventory_next_document` gera a numeração diária atomicamente no banco.
 
-O aplicativo está integrado à autenticação central do OperaHub por `setta_auth.py`.
+As funções PostgreSQL correspondentes são `SECURITY DEFINER` e só concedem execução a `service_role`.
 
-- a política global `login_required` decide se o login é obrigatório;
-- quando desligada, o uso permanece como hoje;
-- quando ligada, o app solicita o mesmo usuário/senha do OperaHub;
-- se a política central não puder ser confirmada, o acesso adota comportamento fail-closed.
+## Autenticação e perfis
+
+O cadastro de usuários continua centralizado no OperaHub.
+
+Enquanto a política global `login_required` estiver desligada, leitura e operação básica podem abrir como **Operador não identificado**. A sidebar permite identificação voluntária com o mesmo usuário e senha do OperaHub.
+
+O perfil não pode mais ser selecionado manualmente:
+
+- usuário anônimo ou usuário comum -> **Operador**;
+- role `admin` ou `gestor` autenticada -> **Gestor**.
+
+Ao autenticar, a `setta-data-api` cria uma sessão temporária específica do Inventário, válida por 8 horas. O token é necessário no backend para:
+
+- encerrar um inventário;
+- salvar configurações administrativas.
+
+Logout invalida a sessão no servidor.
+
+Contagens, inventários e inconsistências novos registram usuário/perfil quando disponíveis.
+
+## Horário
+
+Eventos criados pelo app utilizam explicitamente `America/Sao_Paulo`. Datas ISO são armazenadas para ordenação/auditoria e formatadas em PT-BR na interface.
 
 ## Regras principais
 
 - ESTOQUE ANALÍTICO: código, descrição, saldo e valor;
 - ENDEREÇO: posição e quantidade por material;
 - endereços não disponíveis são excluídos da base apta;
-- inventário suporta primeira contagem, recontagens sem limite, auditoria e encerramento pelo gestor;
+- inventário suporta primeira contagem, recontagens, auditoria e encerramento pelo gestor;
 - contagem cega pode ser usada por padrão;
 - inconsistências abertas entram automaticamente no próximo inventário elegível;
-- histórico mantém todas as contagens por posição;
-- Banco de Dados consulta o `estoque_tratado` publicado pela Central em modo somente leitura.
+- histórico mantém as contagens por posição;
+- Banco de Dados consulta `estoque_tratado` da Central em modo somente leitura.
 
 ## Estrutura
 
 - `app.py`: regras operacionais e páginas;
-- `setta_shell.py`: Padrão SETTA;
-- `setta_auth.py`: autenticação central;
-- `central_inventory_data.py`: Central SETTA e persistência operacional Supabase;
+- `setta_shell.py`: shell SETTA;
+- `setta_auth.py`: login e sessão administrativa;
+- `central_inventory_data.py`: Central SETTA e contratos de dados;
 - `scripts/validate_base.py`: validação automática da baseline;
-- `.streamlit/config.toml`: tema e configuração do Streamlit;
-- `.github/workflows/central-inventory-ci.yml`: CI.
+- `supabase/migrations/`: histórico das alterações de banco;
+- `.streamlit/config.toml`: configuração Streamlit;
+- `.github/workflows/central-inventory-ci.yml`: CI;
+- `.gitignore`: proteção de secrets, SQLite e arquivos locais.
 
 ## Validação
 
-O CI compila os módulos e executa `scripts/validate_base.py`, bloqueando regressões como retorno de CSS legado da sidebar, perda do shell SETTA, bypass fixo de autenticação, alteração não controlada das páginas ou dependências e perda dos contratos da Central.
+O CI compila os módulos e executa `scripts/validate_base.py`. Entre outras regressões, o teste bloqueia:
+
+- retorno do CSS antigo da sidebar;
+- bypass fixo de autenticação;
+- perfil Gestor selecionável manualmente;
+- retorno de persistências legadas;
+- SQLite no diretório do projeto;
+- perda das operações atômicas;
+- perda da autenticação administrativa;
+- alteração não controlada de páginas/dependências;
+- retorno do Firestore ao caminho crítico de inicialização.
+
+## Pendência estrutural futura
+
+A persistência atual já evita sobrescrita global entre documentos diferentes, mas cada documento de inventário ainda é salvo como um JSON único. Para colaboração simultânea de vários operadores no **mesmo documento**, a evolução recomendada é normalizar `documentos`, `itens` e `contagens` em tabelas separadas.
+
+Essa evolução não é necessária para validar o build atual, mas é o próximo passo caso o mesmo inventário passe a ser contado simultaneamente por várias pessoas.
