@@ -257,3 +257,35 @@ section[data-testid="stSidebar"][aria-expanded="false"]>div{{width:0!important;m
 </style>""",
         unsafe_allow_html=True,
     )
+
+    # O estado visual do drawer é controlado pelo app, não pelo atributo
+    # aria-expanded persistido pelo Streamlit/navegador.
+    if sidebar_open:
+        st.markdown(
+            """
+            <style>
+            section[data-testid="stSidebar"],
+            section[data-testid="stSidebar"][aria-expanded="false"]{
+              display:flex!important;
+              visibility:visible!important;
+              opacity:1!important;
+              transform:none!important;
+              left:0!important;
+              width:260px!important;
+              min-width:260px!important;
+              max-width:260px!important;
+              flex:0 0 260px!important;
+              flex-basis:260px!important;
+            }
+            section[data-testid="stSidebar"]>div,
+            section[data-testid="stSidebar"][aria-expanded="false"]>div{
+              display:block!important;
+              visibility:visible!important;
+              width:260px!important;
+              min-width:260px!important;
+              max-width:260px!important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
