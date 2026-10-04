@@ -175,9 +175,6 @@ config=cfg
 # Executa uma vez por sessão e apenas quando a chave ainda não existe remotamente.
 if not st.session_state.get('_operational_state_migration_checked'):
  try:
-  if 'cfg' not in _remote_operational_state and st.session_state.cfg:
-   central_data.save_operational_state('cfg',st.session_state.cfg)
-
   if 'inventories' not in _remote_operational_state and st.session_state.inventories:
    for _doc,_inv in st.session_state.inventories.items():
     central_data.save_inventory_document(str(_doc),_inv)
@@ -266,11 +263,14 @@ def _render_setta_auth_gate():
 def persist_cfg():
  save('cfg',cfg)
  try:
-  central_data.save_operational_state('cfg',cfg)
+  central_data.save_operational_state('cfg',cfg,_session_auth_token())
   st.session_state.pop('_operational_persistence_error',None)
   return True
  except Exception as exc:
-  st.session_state['_operational_persistence_error']=str(exc)
+  message=str(exc)
+  if 'SESSION_INVALID_OR_EXPIRED' in message or 'AUTH_REQUIRED' in message:
+   st.session_state.pop('_setta_auth_user',None)
+  st.session_state['_operational_persistence_error']=message
   return False
 
 def persist_report(report):
