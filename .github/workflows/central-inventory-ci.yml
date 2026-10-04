@@ -9,6 +9,7 @@ on:
       - 'setta_shell.py'
       - 'setta_auth.py'
       - '.streamlit/config.toml'
+      - 'scripts/validate_base.py'
       - 'requirements.txt'
       - '.github/workflows/central-inventory-ci.yml'
   workflow_dispatch:
@@ -24,7 +25,9 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
       - name: Compilar
-        run: python -m py_compile app.py central_inventory_data.py setta_shell.py setta_auth.py
+        run: python -m py_compile app.py central_inventory_data.py setta_shell.py setta_auth.py scripts/validate_base.py
+      - name: Validar baseline
+        run: python scripts/validate_base.py
       - name: Validar integração
         run: |
           python - <<'PY'
