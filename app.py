@@ -38,7 +38,7 @@ def _setta_toggle_sidebar():
 def _setta_close_sidebar():
  st.session_state['_setta_sidebar_open']=False
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261004-B'
+BUILD_DIAGNOSTICO = 'baseline-setta-20261004-C'
 DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
@@ -192,12 +192,11 @@ if 'cfg' not in st.session_state:
  _saved_cfg=_initial_operational_value('cfg',{}) or {}
  st.session_state.cfg={**DEFAULT,**(_saved_cfg if isinstance(_saved_cfg,dict) else {})}
 if 'logo' not in st.session_state: st.session_state.logo=load('logo',(None,''))
-if 'db' not in st.session_state:
- _fsdb=firestore_load_db(); st.session_state.db=_fsdb if _fsdb is not None else load('db')
-if 'pos' not in st.session_state:
- _fspos=firestore_load_pos(); st.session_state.pos=_fspos if _fspos is not None else load('pos')
-if 'eligible' not in st.session_state:
- _fselig=firestore_load_eligible(); st.session_state.eligible=_fselig if _fselig is not None else (load('eligible',[]) or [])
+# A base de estoque é carregada da Central SETTA depois do shell.
+# Firestore/SQLite ficam apenas como contingência se a Central falhar.
+if 'db' not in st.session_state: st.session_state.db=None
+if 'pos' not in st.session_state: st.session_state.pos=None
+if 'eligible' not in st.session_state: st.session_state.eligible=[]
 if 'inventories' not in st.session_state:
  _saved_inventories=_initial_operational_value('inventories',{}) or {}
  st.session_state.inventories=_saved_inventories if isinstance(_saved_inventories,dict) else {}
@@ -596,55 +595,145 @@ def _central_frames():
   metas[key]=meta
  return frames,metas
 
+@st.cache_data(show_spinner=False,ttl=3600,max_entries=4)
+def _cached_inventory_snapshot(analitico_token,endereco_token):
+ # Os tokens entram na chave do cache. Quando qualquer fonte muda,
+ # somente a nova combinação é processada novamente.
+ an,_=central_data.download_source_frame('analitico',analitico_token,header=1)
+ en,_=central_data.download_source_frame('endereco',endereco_token,header=1)
+ eligible=eligible_addresses_from_frame(en)
+ db,pos=build_db(an,en,eligible)
+ return an,en,db,pos,eligible
+
+def _load_inventory_fallback():
+ # Primeiro tenta o cache local, que é imediato. Firestore só é consultado
+ # se não houver snapshot local utilizável.
+ try:
+  local_db=load('db')
+  local_pos=load('pos')
+  local_eligible=load('eligible',[]) or []
+  if isinstance(local_db,pd.DataFrame) and isinstance(local_pos,pd.DataFrame):
+   st.session_state.db=local_db
+   st.session_state.pos=local_pos
+   st.session_state.eligible=list(local_eligible)
+   return True
+ except Exception:
+  pass
+
+ try:
+  fsdb=firestore_load_db()
+  fspos=firestore_load_pos()
+  fselig=firestore_load_eligible()
+  if isinstance(fsdb,pd.DataFrame) and isinstance(fspos,pd.DataFrame):
+   st.session_state.db=fsdb
+   st.session_state.pos=fspos
+   st.session_state.eligible=list(fselig or [])
+   return True
+ except Exception:
+  pass
+ return False
+
+def _save_local_inventory_snapshot():
+ # Contingência local sem custo de rede. A persistência remota da base
+ # consolidada não é necessária porque ela é reconstruível pela Central.
+ try:
+  save('db',st.session_state.db)
+  save('pos',st.session_state.pos)
+  save('eligible',st.session_state.eligible)
+ except Exception:
+  pass
+
 def sync_central_inventory(force=False):
  try:
+  if force:
+   central_data.bundle_state.clear()
+   central_data.sync_state.clear()
+   central_data.download_source_frame.clear()
+   _cached_inventory_snapshot.clear()
+
   bundle=central_data.bundle_state()
   states=central_data.sync_state()
-  changed=False
+
+  metas={}
+  tokens={}
   for key in ('analitico','endereco'):
    meta=bundle.get(key) or {}
-   if not bool(meta.get('available')):continue
-   token=central_data.source_token(meta)
-   state=states.get(key) or {}
-   if force or str(state.get('version_token') or '')!=token or str(state.get('status') or '').upper()!='ATUALIZADO':
-    changed=True
-  if not changed:return False
+   if not bool(meta.get('available')):
+    raise RuntimeError(f'FONTE {key.upper()} NÃO DISPONÍVEL NA CENTRAL.')
+   metas[key]=meta
+   tokens[key]=central_data.source_token(meta)
 
-  frames,metas=_central_frames()
-  an=frames['analitico'];en=frames['endereco']
-  st.session_state.eligible=eligible_addresses_from_frame(en)
-  d,pos=build_db(an,en,st.session_state.eligible)
+  session_token=tokens['analitico']+'||'+tokens['endereco']
+
+  # Se esta sessão já está com a mesma versão, não faz rede/processamento.
+  if (
+   not force
+   and st.session_state.get('_central_inventory_session_token')==session_token
+   and isinstance(st.session_state.get('db'),pd.DataFrame)
+   and isinstance(st.session_state.get('pos'),pd.DataFrame)
+  ):
+   return False
+
+  # Depois de uma falha, não repete o processamento pesado a cada clique.
+  # Uma nova versão ou o botão REPROCESSAR libera nova tentativa.
+  if (
+   not force
+   and st.session_state.get('_central_inventory_failed_token')==session_token
+  ):
+   if st.session_state.get('db') is None or st.session_state.get('pos') is None:
+    _load_inventory_fallback()
+   return False
+
+  needs_commit=False
+  for key in ('analitico','endereco'):
+   state=states.get(key) or {}
+   if (
+    str(state.get('version_token') or '')!=tokens[key]
+    or str(state.get('status') or '').upper()!='ATUALIZADO'
+   ):
+    needs_commit=True
+
+  an,en,db,pos,eligible=_cached_inventory_snapshot(
+   tokens['analitico'],tokens['endereco']
+  )
   st.session_state.an_df=an
   st.session_state.en_df=en
-  st.session_state.db=d
+  st.session_state.db=db
   st.session_state.pos=pos
-  persist_db()
+  st.session_state.eligible=list(eligible)
+  st.session_state['_central_inventory_session_token']=session_token
+  st.session_state.pop('_central_inventory_failed_token',None)
+  st.session_state.pop('_central_inventory_error',None)
 
-  for key,frame in (('analitico',an),('endereco',en)):
-   meta=metas[key]
-   central_data.commit_sync(key,central_data.source_token(meta),meta.get('last_update_at'),len(frame),status='ATUALIZADO')
+  # Mantém apenas contingência local. Não grava milhares de linhas no
+  # Firestore durante o carregamento normal da interface.
+  _save_local_inventory_snapshot()
+
+  if needs_commit:
+   for key,frame in (('analitico',an),('endereco',en)):
+    meta=metas[key]
+    central_data.commit_sync(
+     key,
+     tokens[key],
+     meta.get('last_update_at'),
+     len(frame),
+     status='ATUALIZADO'
+    )
+
   st.session_state['_central_inventory_success']='ANALÍTICO · ENDEREÇO'
   return True
  except Exception as exc:
   st.session_state['_central_inventory_error']=str(exc)
   try:
    bundle=central_data.bundle_state()
-   for key in ('analitico','endereco'):
-    meta=bundle.get(key) or {}
-    if meta:
-     central_data.commit_sync(key,central_data.source_token(meta),meta.get('last_update_at'),0,status='ERRO',error_message=str(exc)[:1200])
+   token_a=central_data.source_token(bundle.get('analitico') or {})
+   token_e=central_data.source_token(bundle.get('endereco') or {})
+   st.session_state['_central_inventory_failed_token']=token_a+'||'+token_e
   except Exception:
    pass
+  if st.session_state.get('db') is None or st.session_state.get('pos') is None:
+   _load_inventory_fallback()
   return False
-
-def ensure_central_frames():
- if st.session_state.get('an_df') is not None and st.session_state.get('en_df') is not None:return
- try:
-  frames,_=_central_frames()
-  st.session_state.an_df=frames['analitico']
-  st.session_state.en_df=frames['endereco']
- except Exception as exc:
-  st.session_state['_central_inventory_error']=str(exc)
 
 def render_api_monitor():
  section_band('01 · FONTES','ACOMPANHAMENTO DE API')
@@ -784,8 +873,7 @@ st.caption(f'BUILD DE DIAGNÓSTICO · {BUILD_DIAGNOSTICO}')
 
 _render_setta_auth_gate()
 
-if sync_central_inventory(force=False):
- st.rerun()
+sync_central_inventory(force=False)
 
 active=st.session_state.section
 
