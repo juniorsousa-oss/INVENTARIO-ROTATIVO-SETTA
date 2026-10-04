@@ -1,33 +1,23 @@
-import os, io, json, base64, pickle, sqlite3, uuid, hashlib
+import os, io, copy, pickle, sqlite3, tempfile, uuid
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
-from PIL import Image
 import central_inventory_data as central_data
 import setta_shell
 import setta_auth
 
-try:
- _GLOBAL_VISUAL_CONFIG=central_data.load_visual_config()
-except Exception:
- _GLOBAL_VISUAL_CONFIG={}
+_GLOBAL_VISUAL_CONFIG={}
+SETTA_UI_CONFIG=setta_shell.build_ui_config({})
 
-SETTA_UI_CONFIG=setta_shell.build_ui_config(
- _GLOBAL_VISUAL_CONFIG.get('ui_config') or {}
+st.set_page_config(
+ page_title='GESTÃO DE ESTOQUE | SETTA',
+ page_icon='📦',
+ layout='wide',
+ initial_sidebar_state='expanded',
 )
-
-def _global_page_icon():
- try:
-  raw=central_data.favicon_bytes(_GLOBAL_VISUAL_CONFIG)
-  if raw:
-   image=Image.open(io.BytesIO(raw));image.load();return image
- except Exception:
-  pass
- return '📦'
-
-st.set_page_config(page_title='GESTÃO DE ESTOQUE | SETTA', page_icon=_global_page_icon(), layout='wide', initial_sidebar_state='expanded')
 
 def _setta_sidebar_is_open():
  return bool(st.session_state.get('_setta_sidebar_open',False))
@@ -38,8 +28,16 @@ def _setta_toggle_sidebar():
 def _setta_close_sidebar():
  st.session_state['_setta_sidebar_open']=False
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261004-D'
-DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
+TZ=ZoneInfo('America/Sao_Paulo')
+
+def now_local():
+ return datetime.now(TZ)
+
+# O shell é emitido antes de qualquer leitura remota operacional.
+setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
+
+BUILD_DIAGNOSTICO = 'baseline-setta-20261004-E'
+DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
  'ALMOX. N.C.I',
@@ -57,14 +55,10 @@ ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
 }
 
 DEFAULT={
- 'theme':'Dark','font':'Arial','font_size':16,'title_size':31,
- 'primary':'#FFD63B','hover':'#F7C928','icon_color':'#FFD63B','dark_bg':'#080B0A','dark_panel':'#101614','dark_panel2':'#141A17','dark_border':'#2B3732','dark_text':'#F4F5F2','dark_muted':'#A9B1AC',
- 'clean_bg':'#F5F6F4','clean_panel':'#FFFFFF','clean_panel2':'#F0F2EF','clean_border':'#D8DDD9','clean_text':'#161A18','clean_muted':'#626B66',
- 'title':'GESTÃO DE ESTOQUE','subtitle':'INVENTÁRIO ROTATIVO • ACURÁCIA • HISTÓRICO','sidebar_sub':'CONTROLE OPERACIONAL SETTA','menu':'NAVEGAÇÃO',
- 'dash':'DASHBOARD','inv':'INVENTÁRIO ROTATIVO','db':'BANCO DE DADOS','reg':'REGISTRO','report':'REPORTAR INCONSISTÊNCIAS','settings':'CONFIGURAÇÕES',
- 'sidebar_width':250,'menu_gap':2,'report_top':0,'logo_w':190,'logo_h':70,'logo_align':'center','logo_top':-10,'sub_top':0,'menu_top':0,'sidebar_align':'left','sidebar_font':12,'item_h':42,'gap':8,'dash_top':0,'inv_top':0,'db_top':0,'reg_top':0,'settings_top':0,'show_footer':True,
- 'blind_default':False,'dashboard_title':'Dashboard','inventory_title':'Inventário Rotativo','database_title':'Banco de Dados','register_title':'Registro','dashboard_subtitle':'Visão geral dos indicadores do estoque.','inventory_subtitle':'Controle e execução dos inventários rotativos.','database_subtitle':'Importação, tratamento e classificação da base de estoque.','register_subtitle':'Histórico dos inventários e das contagens realizadas.'
+ 'blind_default':False,
+ 'new_inventory_text':'NOVO INVENTÁRIO',
 }
+
 
 def dbconn():
  c=sqlite3.connect(DATA); c.execute('CREATE TABLE IF NOT EXISTS state(k TEXT PRIMARY KEY,v BLOB)'); c.commit(); return c
@@ -90,7 +84,6 @@ def firebase_db():
     except Exception:
         return None
 
-def _fs_delete_collection(db, name):
     refs = list(db.collection(name).stream())
     for i in range(0, len(refs), 450):
         batch = db.batch()
@@ -98,7 +91,6 @@ def _fs_delete_collection(db, name):
             batch.delete(ref.reference)
         batch.commit()
 
-def _fs_save_df(db, name, df, key_col=None):
     if df is None:
         return
     _fs_delete_collection(db, name)
@@ -131,7 +123,6 @@ def _fs_load_df(db, name):
         r.pop('_ordem', None)
     return pd.DataFrame(rows)
 
-def _fs_save_eligible(db, values):
     db.collection('estoque_config').document('enderecos').set({'enderecos': list(values or [])})
 
 def _fs_load_eligible(db):
@@ -191,7 +182,6 @@ def _initial_operational_value(key,default):
 if 'cfg' not in st.session_state:
  _saved_cfg=_initial_operational_value('cfg',{}) or {}
  st.session_state.cfg={**DEFAULT,**(_saved_cfg if isinstance(_saved_cfg,dict) else {})}
-if 'logo' not in st.session_state: st.session_state.logo=load('logo',(None,''))
 # A base de estoque é carregada da Central SETTA depois do shell.
 # Firestore/SQLite ficam apenas como contingência se a Central falhar.
 if 'db' not in st.session_state: st.session_state.db=None
@@ -230,23 +220,6 @@ if not st.session_state.get('_operational_state_migration_checked'):
    except Exception as exc:
     st.session_state['_operational_persistence_error']=str(exc)
  st.session_state['_operational_state_migration_checked']=True
-
-# Compatibility defaults: preserve older saved settings while supporting the V5 UI keys.
-_cfg_defaults = {
-    'sidebar_subtitle':'SISTEMA OPERACIONAL DE ESTOQUE',
-    'menu_label':'MENU',
-    'dashboard_label':'DASHBOARD',
-    'inventory_label':'INVENTÁRIO ROTATIVO',
-    'database_label':'BANCO DE DADOS',
-    'register_label':'REGISTRO',
-    'settings_label':'CONFIGURAÇÕES',
-    'report_label':'REPORTAR INCONSISTÊNCIAS',
-    'new_inventory_text':'NOVO INVENTÁRIO',
-        'sidebar_width':250,'menu_gap':2,
-}
-for _k, _v in _cfg_defaults.items():
-    config.setdefault(_k, _v)
-    cfg.setdefault(_k, _v)
 
 # Autenticação central SETTA. A política global do OperaHub decide se o login é obrigatório.
 @st.cache_data(ttl=60,show_spinner=False,max_entries=2)
@@ -361,18 +334,10 @@ def signed_brl(v):
  return ('+' if x>0 else '-')+brl(abs(x))
 
 def logo_uri():
- # A identidade visual central nunca pode impedir a inicialização do app.
- # Mesmo que o deploy esteja com uma versão antiga de central_inventory_data,
- # qualquer 401/indisponibilidade da API cai para a logo local.
  try:
-  global_logo=central_data.logo_data_uri(_GLOBAL_VISUAL_CONFIG)
+  return central_data.logo_data_uri(_GLOBAL_VISUAL_CONFIG) or None
  except Exception:
-  global_logo=''
- if global_logo:return global_logo
- b,n=st.session_state.logo
- if not b:return None
- ext=n.lower(); mime='image/png' if ext.endswith('.png') else 'image/jpeg' if ext.endswith(('.jpg','.jpeg')) else 'image/webp' if ext.endswith('.webp') else 'image/svg+xml'
- return 'data:'+mime+';base64,'+base64.b64encode(b).decode()
+  return None
 
 def section_band(kicker,title,note=''):
  note_html=f'<div class="section-band-note">{note}</div>' if str(note or '').strip() else ''
@@ -756,9 +721,6 @@ def render_api_monitor():
 
 
 
-# SETTA UI — shell canônico do Conversor MRP
-setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
-
 # Sidebar — espelho estrutural do Controle de NFs
 _INV_NAV_PAGES=['Dashboard','Inventário Rotativo','Banco de Dados','Registro','Reportar Inconsistências','Configurações']
 
@@ -863,6 +825,11 @@ with st.container(key='setta_top_controls'):
   use_container_width=True,
   on_click=_setta_toggle_sidebar,
  )
+
+try:
+ _GLOBAL_VISUAL_CONFIG=central_data.load_visual_config()
+except Exception:
+ _GLOBAL_VISUAL_CONFIG={}
 
 _main_logo=logo_uri()
 _logo_html=(f'<img src="{_main_logo}" alt="SETTA">' if _main_logo else '<div style="font-size:2rem;font-weight:800;color:#202124">SETTA</div>')
