@@ -68,6 +68,10 @@ for token in [
     "top:18px!important",
     "left:44px!important",
     "@media(max-width:900px)",
+    "if sidebar_open:",
+    'section[data-testid="stSidebar"][aria-expanded="false"]',
+    "display:flex!important",
+    "transform:none!important",
 ]:
     if token not in shell:
         fail(f"Contrato SETTA ausente: {token}")
