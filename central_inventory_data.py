@@ -145,6 +145,7 @@ def close_inventory_atomic(
     document: dict,
     cycle_codes: list[str],
     reports: dict,
+    auth_token: str,
 ) -> dict:
     return api_call(
         "inventory_close_atomic",
@@ -153,6 +154,7 @@ def close_inventory_atomic(
             "document": document or {},
             "cycle_codes": [str(x) for x in (cycle_codes or [])],
             "reports": reports or {},
+            "auth_token": str(auth_token or "").strip(),
         },
         timeout=60,
     ).get("data") or {}
