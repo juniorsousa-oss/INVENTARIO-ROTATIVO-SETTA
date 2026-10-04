@@ -1,9 +1,0 @@
-name: Temporary Firebase Auth Migration (disabled)
-on:
-  workflow_dispatch:
-
-jobs:
-  disabled:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Temporary migration completed; workflow intentionally disabled."
