@@ -11,6 +11,9 @@ on:
       - '.streamlit/config.toml'
       - 'scripts/validate_base.py'
       - 'requirements.txt'
+      - 'supabase/migrations/**'
+      - '.gitignore'
+      - '.devcontainer/devcontainer.json'
       - '.github/workflows/central-inventory-ci.yml'
   workflow_dispatch:
 
@@ -52,7 +55,8 @@ jobs:
           assert "width:260px!important" in shell
           assert "setta_drawer_toggle" in app
           assert "_render_setta_auth_gate()" in app
-          assert "operahub_auth_user" in auth
+          assert "inventory_login" in auth
+          assert "inventory_logout" in auth
           assert "setta-logo-card" in app
           assert "sidebar-brand" in app
           assert "section-band" in app
@@ -60,6 +64,6 @@ jobs:
           assert "consumer_sync_status" in central
           assert "derived_status" in central
           assert "derived_download" in central
-          assert "visual_get" in central
+          assert "visual_shell_get" in central
           print("CENTRAL_INVENTARIO_OK")
           PY
