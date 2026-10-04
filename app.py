@@ -1026,7 +1026,9 @@ elif active=='Inventário Rotativo':
      for r in inv['rows']:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
-    if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):close_inv(inv);st.rerun()
+    if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):
+     if close_inv(inv):st.rerun()
+     else:st.error('Não foi possível encerrar o inventário. A operação foi revertida.')
    elif prof=='Operador' and inv['status']=='AGUARDANDO RECONTAGEM':
     st.markdown('#### Recontagem — itens liberados pelo gestor')
     targets=[r for r in inv['rows'] if r['status']=='RECONTAR']
@@ -1062,7 +1064,9 @@ elif active=='Inventário Rotativo':
      for r in inv['rows']:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
-    if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):close_inv(inv);st.rerun()
+    if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):
+     if close_inv(inv):st.rerun()
+     else:st.error('Não foi possível encerrar o inventário. A operação foi revertida.')
    elif prof=='Gestor' and inv['status']=='AGUARDANDO AUDITORIA':
     st.markdown('#### Auditoria / 3ª ou próxima contagem')
     targets=[r for r in inv['rows'] if r['status']=='AUDITORIA']
@@ -1230,7 +1234,8 @@ elif active=='Configurações':
   section_band('01 · INVENTÁRIO','CONFIGURAÇÕES OPERACIONAIS')
   cfg['blind_default']=st.checkbox('CONTAGEM CEGA POR PADRÃO',cfg['blind_default'])
   if st.button('SALVAR CONFIGURAÇÕES',type='primary',use_container_width=True):
-   persist_cfg();st.success('CONFIGURAÇÕES SALVAS.')
+   if persist_cfg():st.success('CONFIGURAÇÕES SALVAS.')
+   else:st.error('Não foi possível salvar as configurações. Refaça a autenticação e tente novamente.')
  with tab_api:
   render_api_monitor()
 
