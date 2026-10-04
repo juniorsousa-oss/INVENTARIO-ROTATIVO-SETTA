@@ -72,7 +72,7 @@ def load(k,d=None):
 
 
 
-# Firebase Admin / Firestore: server-side access using Streamlit Secrets.
+# Firebase Admin / Firestore: contingência somente leitura.
 def firebase_db():
     try:
         if not firebase_admin._apps:
@@ -83,36 +83,6 @@ def firebase_db():
         return firestore.client()
     except Exception:
         return None
-
-    refs = list(db.collection(name).stream())
-    for i in range(0, len(refs), 450):
-        batch = db.batch()
-        for ref in refs[i:i+450]:
-            batch.delete(ref.reference)
-        batch.commit()
-
-    if df is None:
-        return
-    _fs_delete_collection(db, name)
-    records = json.loads(df.to_json(orient='records', date_format='iso'))
-    batch = db.batch()
-    pending = 0
-    for idx, rec in enumerate(records):
-        if key_col and key_col in rec:
-            raw = str(rec.get(key_col) or '').strip()
-            doc_id = raw if raw else f'row_{idx}'
-        else:
-            doc_id = hashlib.sha1(json.dumps(rec, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
-        doc_id = doc_id.replace('/', '_')
-        rec['_ordem'] = idx
-        batch.set(db.collection(name).document(doc_id), rec)
-        pending += 1
-        if pending >= 450:
-            batch.commit()
-            batch = db.batch()
-            pending = 0
-    if pending:
-        batch.commit()
 
 def _fs_load_df(db, name):
     rows = [x.to_dict() for x in db.collection(name).stream()]
@@ -401,7 +371,6 @@ def dashboard_kpi_grid(items,valor_apto,qtd_cnt,qtd_div,acc_itens,acc_pos):
  html.append('</div>')
  st.markdown(''.join(html),unsafe_allow_html=True)
 
-def css():
  return None
 
 st.markdown(
@@ -464,7 +433,6 @@ button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:#11
 
 def ncode(s): return s.astype('string').fillna('').str.strip().str.replace(r'\.0$','',regex=True).str.zfill(8)
 def naddr(s): return s.astype('string').fillna('').str.strip().str.replace(r'\s+',' ',regex=True).str.upper()
-def readxls(f): f.seek(0); return pd.read_excel(f,sheet_name=0,header=1,dtype=str)
 def pnum(v):
  if v is None or pd.isna(v):return 0.0
  s=str(v).strip().replace('R$','').replace(' ','')
