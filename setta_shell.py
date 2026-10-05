@@ -108,36 +108,35 @@ def render_shell(st, ui_config, sidebar_open):
         f"""<style>
 /* SETTA UI — App Shell Rounded V1 · fonte: Conversor MRP */
 html,body,#root{{
-  height:100%!important;min-height:100%!important;max-height:100%!important;
-  overflow:hidden!important;
+  height:auto!important;min-height:100%!important;max-height:none!important;
+  overflow-x:hidden!important;overflow-y:auto!important;
 }}
 html,body{{background:#EEF3F8!important}}
-body{{box-sizing:border-box!important;padding:18px!important;margin:0!important;overflow:hidden!important}}
+body{{box-sizing:border-box!important;padding:18px!important;margin:0!important;overflow-y:auto!important}}
 .stApp,[data-testid="stApp"]{{
   position:relative!important;inset:auto!important;
-  width:calc(100vw - 36px)!important;height:calc(100vh - 36px)!important;
-  min-height:0!important;max-height:calc(100vh - 36px)!important;
+  width:calc(100vw - 36px)!important;height:auto!important;
+  min-height:calc(100vh - 36px)!important;max-height:none!important;
   max-width:1680px!important;margin:0 auto!important;
   border:1px solid rgba(202,214,228,.9)!important;border-radius:24px!important;
-  overflow:hidden!important;background:#F8FAFD!important;
+  overflow:visible!important;background:#F8FAFD!important;
   box-shadow:0 24px 70px rgba(15,27,45,.13)!important;
 }}
 [data-testid="stAppViewContainer"]{{
-  position:relative!important;inset:auto!important;width:100%!important;height:100%!important;
-  min-height:0!important;max-height:100%!important;border-radius:24px!important;
-  overflow:hidden!important;background:{app_background}!important;color:{text_color}!important;
+  position:relative!important;inset:auto!important;width:100%!important;height:auto!important;
+  min-height:calc(100vh - 36px)!important;max-height:none!important;border-radius:24px!important;
+  overflow:visible!important;background:{app_background}!important;color:{text_color}!important;
 }}
 [data-testid="stMain"],.stMain,section.main{{
-  position:relative!important;height:100%!important;min-height:0!important;max-height:100%!important;
-  overflow-x:hidden!important;overflow-y:auto!important;scrollbar-width:thin!important;
-  scrollbar-color:#CAD5E3 transparent!important;
+  position:relative!important;height:auto!important;min-height:calc(100vh - 36px)!important;max-height:none!important;
+  overflow-x:hidden!important;overflow-y:visible!important;
 }}
 [data-testid="stMain"]::-webkit-scrollbar,.stMain::-webkit-scrollbar,section.main::-webkit-scrollbar{{width:9px!important}}
 [data-testid="stMain"]::-webkit-scrollbar-track,.stMain::-webkit-scrollbar-track,section.main::-webkit-scrollbar-track{{background:transparent!important}}
 [data-testid="stMain"]::-webkit-scrollbar-thumb,.stMain::-webkit-scrollbar-thumb,section.main::-webkit-scrollbar-thumb{{background:#CAD5E3!important;border-radius:999px!important}}
 [data-testid="stMainBlockContainer"],[data-testid="stAppViewBlockContainer"]{{
-  height:auto!important;min-height:100%!important;max-height:none!important;overflow:visible!important;
-  padding-bottom:48px!important;
+  height:auto!important;min-height:calc(100vh - 36px)!important;max-height:none!important;overflow:visible!important;
+  padding-bottom:140px!important;
 }}
 [data-testid="stHeader"],[data-testid="stToolbar"],[data-testid="stDecoration"],header[data-testid="stHeader"]{{
   display:none!important;visibility:hidden!important;height:0!important;min-height:0!important;max-height:0!important;
@@ -146,7 +145,7 @@ body{{box-sizing:border-box!important;padding:18px!important;margin:0!important;
 #MainMenu{{display:none!important}}
 .block-container{{
   max-width:1780px!important;padding-top:18px!important;padding-left:2.7rem!important;
-  padding-right:2.7rem!important;padding-bottom:32px!important;width:100%!important;
+  padding-right:2.7rem!important;padding-bottom:120px!important;width:100%!important;
 }}
 .st-key-setta_top_controls{{
   position:absolute!important;top:18px!important;left:44px!important;z-index:120!important;
@@ -160,7 +159,8 @@ body{{box-sizing:border-box!important;padding:18px!important;margin:0!important;
   box-shadow:0 2px 8px rgba(15,23,42,.06)!important;
 }}
 section[data-testid="stSidebar"]{{
-  align-self:stretch!important;height:100%!important;min-height:100%!important;max-height:100%!important;
+  position:sticky!important;top:0!important;align-self:flex-start!important;
+  height:calc(100vh - 36px)!important;min-height:calc(100vh - 36px)!important;max-height:calc(100vh - 36px)!important;
   background:{surface_background}!important;border-right:1px solid #e8ebf0!important;
   border-radius:24px 0 0 24px!important;width:260px!important;min-width:260px!important;
   max-width:260px!important;flex:0 0 260px!important;flex-basis:260px!important;
