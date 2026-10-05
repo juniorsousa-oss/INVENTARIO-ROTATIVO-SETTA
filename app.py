@@ -36,7 +36,7 @@ def now_local():
 # O shell é emitido antes de qualquer leitura remota operacional.
 setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261004-E'
+BUILD_DIAGNOSTICO = 'baseline-setta-20261004-F'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
@@ -516,6 +516,8 @@ def addcount(r,q,cm,stage):
   'usuario':_session_operator(),
   'perfil':_session_profile(),
  })
+ if stage=='1ª CONTAGEM':
+  r['status']='CONTADO'
 
 def last(r):return r['contagens'][-1]['quantidade'] if r['contagens'] else None
 def diff(r,q):return float(q)-float(r['qtd_sistema'])
@@ -991,13 +993,34 @@ elif active=='Inventário Rotativo':
    inv=st.session_state.inventories[doc];st.divider();st.markdown(f'### Inventário {doc} — {inv["status"]}')
    prof=_session_profile()
    if prof=='Operador' and inv['status']=='EM CONTAGEM':
+    total_pos=len(inv['rows'])
+    counted_pos=sum(1 for r in inv['rows'] if r['contagens'])
+    pending_pos=total_pos-counted_pos
+    p1,p2,p3=st.columns(3)
+    p1.metric('POSIÇÕES',total_pos)
+    p2.metric('CONTADAS',counted_pos)
+    p3.metric('PENDENTES',pending_pos)
+    st.progress(counted_pos/total_pos if total_pos else 0.0)
+
+    if total_pos and counted_pos==total_pos:
+     st.success('Todas as posições foram contadas. A 1ª contagem está pronta para análise do Gestor.')
+     if st.button('FINALIZAR 1ª CONTAGEM',type='primary',use_container_width=True,key='finish_first_count'):
+      inv['status']='AGUARDANDO ANÁLISE'
+      if persist_inv(inv):
+       st.rerun()
+      else:
+       st.error('Não foi possível finalizar a 1ª contagem.')
+    else:
+     st.info(f'Faltam {pending_pos} posição(ões) para liberar a finalização.')
+
     for r in inv['rows']:
      if r['contagens']:continue
      with st.container(border=True):
       a,b,c=st.columns([1.1,3,1.3]);a.markdown(f'**{r["codigo"]}**');b.write(f'{r["descricao"]}\n\n**Endereço:** {r["endereco"]}');c.write('**Qtd. sistema:** OCULTA' if inv['blind_count'] else f'**Qtd. sistema:** {fn(r["qtd_sistema"])}');x,y=st.columns([1,2]);q=x.number_input('Contagem',0.0,step=.001,format='%.3f',key='q1_'+r['id']);cm=y.text_input('Comentário (opcional)',key='cm1_'+r['id'])
-      if st.button('Salvar contagem',key='sv1_'+r['id'],type='primary'):addcount(r,q,cm,'1ª CONTAGEM');persist_inv(inv);st.rerun()
-    if all(r['contagens'] for r in inv['rows']):
-     if st.button('Fechar Contagem',type='primary'):inv['status']='AGUARDANDO ANÁLISE';persist_inv(inv);st.rerun()
+      if st.button('Salvar contagem',key='sv1_'+r['id'],type='primary'):
+       addcount(r,q,cm,'1ª CONTAGEM')
+       if persist_inv(inv):st.rerun()
+       else:st.error('Não foi possível salvar a contagem.')
    elif prof=='Gestor' and inv['status']=='AGUARDANDO ANÁLISE':
     st.markdown('#### Análise da 1ª contagem')
     # 1ª contagem: igual ao sistema confirma; divergente segue para decisão.
