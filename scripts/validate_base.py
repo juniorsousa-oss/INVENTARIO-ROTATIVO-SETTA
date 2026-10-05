@@ -75,9 +75,20 @@ for token in [
     'section[data-testid="stSidebar"][aria-expanded="false"]',
     "display:flex!important",
     "transform:none!important",
+    "height:auto!important",
+    "max-height:none!important",
+    "padding-bottom:140px!important",
+    "position:sticky!important",
 ]:
     if token not in shell:
         fail(f"Contrato SETTA ausente: {token}")
+
+for forbidden in [
+    "height:calc(100vh - 36px)!important;\n  min-height:0!important;max-height:calc(100vh - 36px)!important;",
+    "overflow:hidden!important;background:#F8FAFD!important;",
+]:
+    if forbidden in shell:
+        fail(f"Shell fixo/cortado retornou: {forbidden}")
 
 for token in [
     "setta_shell.render_shell(",
