@@ -36,7 +36,7 @@ def now_local():
 # O shell é emitido antes de qualquer leitura remota operacional.
 setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261004-F'
+BUILD_DIAGNOSTICO = 'baseline-setta-20261004-G'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
@@ -1003,13 +1003,14 @@ elif active=='Inventário Rotativo':
     st.progress(counted_pos/total_pos if total_pos else 0.0)
 
     if total_pos and counted_pos==total_pos:
-     st.success('Todas as posições foram contadas. A 1ª contagem está pronta para análise do Gestor.')
+     st.markdown('#### 1ª CONTAGEM CONCLUÍDA')
      if st.button('FINALIZAR 1ª CONTAGEM',type='primary',use_container_width=True,key='finish_first_count'):
       inv['status']='AGUARDANDO ANÁLISE'
       if persist_inv(inv):
        st.rerun()
       else:
        st.error('Não foi possível finalizar a 1ª contagem.')
+     st.success('Todas as posições foram contadas. Finalize acima para encaminhar o inventário à análise do Gestor.')
     else:
      st.info(f'Faltam {pending_pos} posição(ões) para liberar a finalização.')
 
