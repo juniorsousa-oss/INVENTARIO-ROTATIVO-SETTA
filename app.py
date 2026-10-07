@@ -36,7 +36,84 @@ def now_local():
 # O shell é emitido antes de qualquer leitura remota operacional.
 setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261004-H'
+# Override final do layout externo: mantém o mesmo comportamento fluido do MRP.
+# Este bloco fica no entrypoint para impedir que um shell antigo em cache volte
+# a limitar largura, altura ou rolagem do Gestão de Estoque.
+st.markdown(
+    """
+    <style>
+    /* INVENTÁRIO SETTA — LAYOUT FLUIDO FINAL MRP V1 */
+    html,body,#root{
+      min-height:100%!important;
+      height:auto!important;
+      max-height:none!important;
+      overflow-y:auto!important;
+      overflow-x:hidden!important;
+    }
+    body{
+      margin:0!important;
+      padding:0!important;
+      background:#F4F7FB!important;
+      overflow-y:auto!important;
+    }
+    .stApp,[data-testid="stApp"]{
+      position:relative!important;
+      inset:auto!important;
+      width:100%!important;
+      max-width:none!important;
+      height:auto!important;
+      min-height:100vh!important;
+      max-height:none!important;
+      margin:0!important;
+      border:0!important;
+      border-radius:0!important;
+      box-shadow:none!important;
+      overflow:visible!important;
+    }
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    .stMain,
+    section.main{
+      position:relative!important;
+      width:100%!important;
+      max-width:none!important;
+      height:auto!important;
+      min-height:100vh!important;
+      max-height:none!important;
+      margin:0!important;
+      border-radius:0!important;
+      overflow-x:hidden!important;
+      overflow-y:visible!important;
+    }
+    [data-testid="stMainBlockContainer"],
+    [data-testid="stAppViewBlockContainer"],
+    [data-testid="stAppViewContainer"] .main .block-container,
+    [data-testid="stMain"] .block-container,
+    .stMain .block-container,
+    .block-container{
+      width:100%!important;
+      max-width:none!important;
+      margin-left:0!important;
+      margin-right:0!important;
+      box-sizing:border-box!important;
+    }
+    section[data-testid="stSidebar"]{
+      border-radius:0!important;
+    }
+    @media (min-width:901px){
+      [data-testid="stMainBlockContainer"],
+      [data-testid="stAppViewBlockContainer"],
+      .block-container{
+        padding-left:2.7rem!important;
+        padding-right:2.7rem!important;
+      }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+BUILD_DIAGNOSTICO = 'baseline-setta-20261007-I'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
