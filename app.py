@@ -114,7 +114,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261007-K'
+BUILD_DIAGNOSTICO = 'baseline-setta-20261007-L'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
@@ -136,6 +136,19 @@ DEFAULT={
  'blind_default':False,
  'new_inventory_text':'NOVO INVENTÁRIO',
 }
+
+DIVERGENCE_REASONS=[
+ 'ERRO DE CONTAGEM',
+ 'MOVIMENTAÇÃO NÃO REGISTRADA',
+ 'ENTRADA NÃO REGISTRADA',
+ 'SAÍDA/CONSUMO NÃO REGISTRADO',
+ 'RETORNO DE PRODUÇÃO',
+ 'MATERIAL EM ENDEREÇO INCORRETO',
+ 'AVARIA/PERDA',
+ 'DIVERGÊNCIA DE SISTEMA',
+ 'OUTRO',
+]
+DIVERGENCE_TREATMENTS=['AJUSTAR ESTOQUE','ENCERRAR SEM AJUSTE']
 
 
 def dbconn():
@@ -598,8 +611,87 @@ def make_rows(sel,pos):
  rows=[]
  for _,p in sel.iterrows():
   for _,r in pos[(pos.codigo==p.codigo)&pos.apto].iterrows():
-   rows.append({'id':uuid.uuid4().hex[:12],'codigo':str(p.codigo),'descricao':str(p.descricao),'endereco':str(r.endereco),'qtd_sistema':float(r.quantidade),'valor_unitario':float(p.valor_unitario),'contagens':[],'status':'PENDENTE','contagem_final':None,'resultado_final':'','comentario_final':'SC'})
+   rows.append({
+    'id':uuid.uuid4().hex[:12],
+    'codigo':str(p.codigo),
+    'descricao':str(p.descricao),
+    'endereco':str(r.endereco),
+    'qtd_sistema':float(r.quantidade),
+    'valor_unitario':float(p.valor_unitario),
+    'contagens':[],
+    'status':'PENDENTE',
+    'contagem_final':None,
+    'resultado_final':'',
+    'comentario_final':'SC',
+    'motivo_divergencia':'',
+    'tratativa_divergencia':'',
+    'observacao_tratativa':'',
+    'ajuste_necessario_qtd':0.0,
+    'ajuste_autorizado':False,
+    'ajuste_qtd':0.0,
+    'acao_protheus':'',
+    'ajuste_autorizado_por':'',
+    'ajuste_autorizado_em':'',
+   })
  return rows
+
+def register_divergence_treatment(r,q,motivo,tratamento,observacao=''):
+ stamp=now_local()
+ ajuste=float(q)-float(r['qtd_sistema'])
+ autorizado=str(tratamento).upper()=='AJUSTAR ESTOQUE'
+ r['contagem_final']=float(q)
+ r['motivo_divergencia']=str(motivo or '').strip()
+ r['tratativa_divergencia']=str(tratamento or '').strip().upper()
+ r['observacao_tratativa']=str(observacao or '').strip()
+ r['ajuste_necessario_qtd']=ajuste
+ r['ajuste_autorizado']=autorizado
+ r['ajuste_qtd']=ajuste if autorizado else 0.0
+ r['acao_protheus']='ENTRADA' if autorizado and ajuste>0 else 'SAÍDA' if autorizado and ajuste<0 else ''
+ r['ajuste_autorizado_por']=_session_operator() if autorizado else ''
+ r['ajuste_autorizado_em']=stamp.isoformat() if autorizado else ''
+ r['resultado_final']='AJUSTE AUTORIZADO' if autorizado else 'ENCERRADO SEM AJUSTE'
+ r['comentario_final']=r['observacao_tratativa'] or r['motivo_divergencia'] or 'SC'
+ r['status']='FINALIZADO'
+
+def _divergent_pending_rows(inv):
+ return [
+  r for r in inv.get('rows',[])
+  if r.get('status')!='FINALIZADO'
+  and r.get('contagens')
+  and abs(diff(r,last(r)))>1e-9
+ ]
+
+def _render_divergence_treatment(r,q,key_prefix):
+ motivo=st.selectbox(
+  'Motivo da divergência',
+  ['SELECIONE...']+DIVERGENCE_REASONS,
+  key=f'{key_prefix}_motivo_{r["id"]}',
+ )
+ tratamento=st.radio(
+  'Tratativa',
+  DIVERGENCE_TREATMENTS,
+  horizontal=True,
+  key=f'{key_prefix}_trat_{r["id"]}',
+ )
+ observacao=st.text_input(
+  'Observação da tratativa (opcional)',
+  key=f'{key_prefix}_obs_{r["id"]}',
+ )
+ if tratamento=='AJUSTAR ESTOQUE':
+  _aj=diff(r,q)
+  _acao='ENTRADA' if _aj>0 else 'SAÍDA' if _aj<0 else 'SEM AJUSTE'
+  st.caption(
+   f'Ajuste proposto: {_acao} · {abs(_aj):,.3f} unidade(s) · '
+   f'Saldo sistema {fn(r["qtd_sistema"])} → físico {fn(q)}'
+  )
+ if st.button('REGISTRAR TRATATIVA',key=f'{key_prefix}_final_{r["id"]}',type='primary',use_container_width=True):
+  if motivo=='SELECIONE...':
+   st.error('Selecione o motivo da divergência antes de concluir.')
+   return False
+  register_divergence_treatment(r,q,motivo,tratamento,observacao)
+  return True
+ return False
+
 def persist_inv(inv):
  doc=str(inv.get('documento') or '').strip()
  if not doc:return False
@@ -635,6 +727,13 @@ def sev(v):return 'BAIXO' if v<=100 else 'MÉDIO' if v<=1000 else 'ALTO'
 
 def close_inv(inv):
  doc=str(inv.get('documento') or '').strip()
+ pendentes=[r for r in inv.get('rows',[]) if r.get('status')!='FINALIZADO']
+ if pendentes:
+  st.session_state['_inventory_close_error']=(
+   f'{len(pendentes)} item(ns) ainda precisam ser concluídos antes do encerramento.'
+  )
+  return False
+ st.session_state.pop('_inventory_close_error',None)
  before_inv=copy.deepcopy(inv)
  before_cycles=copy.deepcopy(st.session_state.cycles)
  before_reports=copy.deepcopy(st.session_state.reports)
@@ -1050,10 +1149,39 @@ elif active=='Inventário Rotativo':
   if b.button(config['new_inventory_text'],type='primary',use_container_width=True):st.session_state.new_inv=True;st.rerun()
   if st.session_state.new_inv:
    with st.container(border=True):
-    a,b,c=st.columns(3);n=a.number_input('Quantidade de produtos distintos',1,500,10);blind=b.checkbox('Contagem cega',value=cfg['blind_default']);c.metric('Ciclo atual',cycle());x,y=st.columns(2)
+    a,b,c=st.columns(3)
+    selection_mode=a.radio('Seleção de materiais',['AUTOMÁTICA','MANUAL'],horizontal=True,key='inventory_selection_mode')
+    blind=b.checkbox('Contagem cega',value=cfg['blind_default'])
+    c.metric('Ciclo atual',cycle())
+    n=10
+    manual_codes=[]
+    if selection_mode=='AUTOMÁTICA':
+     n=st.number_input('Quantidade de produtos distintos',1,500,10,key='inventory_auto_qty')
+    else:
+     _eligible_products=st.session_state.db[
+      (st.session_state.db.saldo_apto>0)&(st.session_state.db.valor_unitario>0)
+     ][['codigo','descricao']].drop_duplicates('codigo').copy()
+     _manual_map={
+      f'{str(row.codigo)} — {str(row.descricao)}':str(row.codigo)
+      for _,row in _eligible_products.iterrows()
+     }
+     _manual_labels=st.multiselect(
+      'Materiais do inventário',
+      list(_manual_map.keys()),
+      key='inventory_manual_products',
+      placeholder='Pesquise pelo código ou descrição',
+     )
+     manual_codes=[_manual_map[x] for x in _manual_labels]
+     st.caption('Inconsistências abertas do Inventário Rotativo continuam sendo incluídas automaticamente.')
+    x,y=st.columns(2)
     if x.button('Criar inventário',type='primary',use_container_width=True):
      urgent_codes=sorted({str(rep.get('codigo')) for rep in st.session_state.reports.values() if rep.get('status')=='ABERTO' and rep.get('equipe')=='INVENTÁRIO ROTATIVO'})
-     sel=select_products(st.session_state.db,n,urgent_codes);rows=make_rows(sel,st.session_state.pos)
+     if selection_mode=='MANUAL':
+      _selected_codes=list(dict.fromkeys(manual_codes+urgent_codes))
+      sel=st.session_state.db[st.session_state.db.codigo.astype(str).isin(_selected_codes)].copy()
+     else:
+      sel=select_products(st.session_state.db,n,urgent_codes)
+     rows=make_rows(sel,st.session_state.pos)
      if not rows:st.error('Os produtos selecionados não possuem endereços aptos.')
      else:
       try:
@@ -1145,10 +1273,12 @@ elif active=='Inventário Rotativo':
     for r in divs:
      with st.container(border=True):
       q=last(r);a,b,c,d=st.columns(4);a.markdown(f'**{r["codigo"]} / {r["endereco"]}**');b.metric('Sistema',fn(r['qtd_sistema']));c.metric('1ª contagem',fn(q));d.metric('Divergência',signed_brl(divergencia_valor(r,q)));st.caption(f'Divergência de quantidade: {diff(r,q):+,.3f}'.replace(',','X').replace('.',',').replace('X','.').replace('+','+')+f' · Classificação: {sev(abs(divergencia_valor(r,q)))} · Comentário: {r["contagens"][-1]["comentario"]}')
-      x,y,z=st.columns(3)
-      if x.button('RECONTAR ESTE ITEM',key='r1_'+r['id']):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
-      if y.button('AUDITAR ESTE ITEM',key='a1_'+r['id']):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
-      if z.button('ENCERRAR ESTE ITEM',key='e1_'+r['id']):r['contagem_final']=q;r['resultado_final']='ENCERRADO PELO GESTOR';r['status']='FINALIZADO';persist_inv(inv);st.rerun()
+      x,y=st.columns(2)
+      if x.button('RECONTAR ESTE ITEM',key='r1_'+r['id'],use_container_width=True):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
+      if y.button('AUDITAR ESTE ITEM',key='a1_'+r['id'],use_container_width=True):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
+      with st.expander('CONCLUIR / TRATAR DIVERGÊNCIA'):
+       if _render_divergence_treatment(r,q,'a1'):
+        persist_inv(inv);st.rerun()
     x,y,z=st.columns(3)
     if x.button('RECONTAR TODOS OS DIVERGENTES',type='primary',use_container_width=True):
      for r in inv['rows']:
@@ -1160,7 +1290,7 @@ elif active=='Inventário Rotativo':
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
     if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):
      if close_inv(inv):st.rerun()
-     else:st.error('Não foi possível encerrar o inventário. A operação foi revertida.')
+     else:st.error(st.session_state.get('_inventory_close_error') or 'Não foi possível encerrar o inventário. A operação foi revertida.')
    elif prof=='Operador' and inv['status']=='AGUARDANDO RECONTAGEM':
     st.markdown('#### Recontagem — itens liberados pelo gestor')
     targets=[r for r in inv['rows'] if r['status']=='RECONTAR']
@@ -1178,15 +1308,19 @@ elif active=='Inventário Rotativo':
      q2=last(r);q1=r['contagens'][-2]['quantidade'] if len(r['contagens'])>=2 else None
      with st.container(border=True):
       st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(f'Sistema: **{fn(r["qtd_sistema"])}** · Anterior: **{fn(q1) if q1 is not None else "—"}** · Atual: **{fn(q2)}**')
-      if q1 is not None and abs(q2-q1)<1e-9:
-       st.success('Atual igual à anterior: ERRO DE INVENTÁRIO. Nenhuma nova contagem é necessária.');r['contagem_final']=q2;r['resultado_final']='ERRO DE INVENTÁRIO';r['status']='FINALIZADO';persist_inv(inv)
-      elif abs(q2-r['qtd_sistema'])<1e-9:
+      if abs(q2-r['qtd_sistema'])<1e-9:
        st.success('Atual igual ao sistema: SISTEMA CONFIRMADO. Nenhuma nova contagem é necessária.');r['contagem_final']=q2;r['resultado_final']='SISTEMA CONFIRMADO';r['status']='FINALIZADO';persist_inv(inv)
       else:
-       st.warning('A divergência permanece. O gestor deve decidir o próximo passo.');a,b,c=st.columns(3)
-       if a.button('RECONTAR ESTE ITEM',key='dr_'+r['id']):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
-       if b.button('AUDITAR ESTE ITEM',key='da_'+r['id']):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
-       if c.button('ENCERRAR ESTE ITEM',key='dc_'+r['id']):r['contagem_final']=q2;r['resultado_final']='ENCERRADO PELO GESTOR';r['status']='FINALIZADO';persist_inv(inv);st.rerun()
+       if q1 is not None and abs(q2-q1)<1e-9:
+        st.success('A recontagem confirmou o físico. A divergência com o sistema permanece e agora exige tratativa do Gestor.')
+       else:
+        st.warning('A divergência permanece. O gestor deve decidir o próximo passo.')
+       a,b=st.columns(2)
+       if a.button('RECONTAR ESTE ITEM',key='dr_'+r['id'],use_container_width=True):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
+       if b.button('AUDITAR ESTE ITEM',key='da_'+r['id'],use_container_width=True):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
+       with st.expander('CONCLUIR / TRATAR DIVERGÊNCIA'):
+        if _render_divergence_treatment(r,q2,'dec'):
+         persist_inv(inv);st.rerun()
     x,y,z=st.columns(3)
     if x.button('RECONTAR TODOS OS DIVERGENTES',type='primary',use_container_width=True):
      for r in inv['rows']:
@@ -1274,9 +1408,65 @@ elif active=='Registro':
  for inv in st.session_state.inventories.values():
   if inv['status']!='FECHADO':continue
   for r in inv['rows']:
-   rows.append({'Documento':inv['documento'],'Data':inv['data'],'Responsável':inv['responsavel'],'Ciclo':inv['ciclo'],'Código':r['codigo'],'Descrição':r['descricao'],'Endereço':r['endereco'],'Qtd. Sistema':r['qtd_sistema'],'Contagens':' | '.join(f"{x['etapa']}: {fn(x['quantidade'])} ({x['comentario']})" for x in r['contagens']),'Contagem Final':r['contagem_final'],'Resultado':r['resultado_final'],'Valor Divergência':divergencia_valor(r,r['contagem_final']) if r['contagem_final'] is not None else 0})
+   _final=r.get('contagem_final')
+   _ajuste_necessario=float(r.get('ajuste_necessario_qtd') or (diff(r,_final) if _final is not None else 0))
+   rows.append({
+    'Documento':inv['documento'],
+    'Data':inv['data'],
+    'Responsável':inv['responsavel'],
+    'Ciclo':inv['ciclo'],
+    'Código':r['codigo'],
+    'Descrição':r['descricao'],
+    'Endereço':r['endereco'],
+    'Qtd. Sistema':r['qtd_sistema'],
+    'Contagens':' | '.join(f"{x['etapa']}: {fn(x['quantidade'])} ({x['comentario']})" for x in r['contagens']),
+    'Contagem Final':_final,
+    'Resultado':r.get('resultado_final',''),
+    'Motivo Divergência':r.get('motivo_divergencia',''),
+    'Tratativa':r.get('tratativa_divergencia',''),
+    'Ajuste Necessário':_ajuste_necessario,
+    'Ajuste Autorizado':'SIM' if r.get('ajuste_autorizado') else 'NÃO',
+    'Qtd. Ajuste':float(r.get('ajuste_qtd') or 0),
+    'Ação Protheus':r.get('acao_protheus',''),
+    'Autorizado por':r.get('ajuste_autorizado_por',''),
+    'Autorizado em':r.get('ajuste_autorizado_em',''),
+    'Valor Divergência':divergencia_valor(r,_final) if _final is not None else 0,
+   })
  if rows:
-  df=pd.DataFrame(rows);display_df=df.copy();display_df['Valor Divergência']=display_df['Valor Divergência'].map(signed_brl);st.dataframe(display_df,use_container_width=True,hide_index=True);export_df=display_df.copy();st.download_button('Exportar Registro em Excel',excel_bytes(export_df,'Registro'),'registro_inventarios.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  df=pd.DataFrame(rows)
+  display_df=df.copy()
+  display_df['Valor Divergência']=display_df['Valor Divergência'].map(signed_brl)
+  st.dataframe(display_df,use_container_width=True,hide_index=True)
+  export_df=display_df.copy()
+  c1,c2,c3=st.columns(3)
+  c1.download_button('Exportar Registro em Excel',excel_bytes(export_df,'Registro'),'registro_inventarios.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',use_container_width=True)
+  ajustes=df[df['Ajuste Autorizado'].eq('SIM')].copy()
+  if not ajustes.empty:
+   carga=ajustes[[
+    'Documento','Código','Descrição','Endereço','Qtd. Sistema','Contagem Final',
+    'Ação Protheus','Qtd. Ajuste','Ajuste Necessário','Motivo Divergência',
+    'Autorizado por','Autorizado em'
+   ]].copy()
+   carga['QUANTIDADE PROTHEUS']=carga['Qtd. Ajuste'].abs()
+   carga['AJUSTE QTD (SINAL)']=carga['Ajuste Necessário']
+   carga=carga.rename(columns={
+    'Ação Protheus':'AÇÃO PROTHEUS',
+    'Qtd. Sistema':'SALDO SISTEMA',
+    'Contagem Final':'SALDO FÍSICO',
+    'Motivo Divergência':'MOTIVO',
+    'Autorizado por':'AUTORIZADO POR',
+    'Autorizado em':'AUTORIZADO EM',
+   })
+   carga=carga[[
+    'Documento','Código','Descrição','Endereço','AÇÃO PROTHEUS',
+    'QUANTIDADE PROTHEUS','AJUSTE QTD (SINAL)','SALDO SISTEMA','SALDO FÍSICO',
+    'MOTIVO','AUTORIZADO POR','AUTORIZADO EM'
+   ]]
+   c2.download_button('Ajustes Protheus · Excel',excel_bytes(carga,'AJUSTES PROTHEUS'),'ajustes_protheus.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',use_container_width=True)
+   _csv=carga.to_csv(index=False,sep=';',decimal=',').encode('utf-8-sig')
+   c3.download_button('Ajustes Protheus · CSV',_csv,'ajustes_protheus.csv','text/csv',use_container_width=True)
+  else:
+   c2.caption('Nenhum ajuste autorizado para exportação.')
  else:st.info('Nenhum inventário fechado.')
 
 # Reportar Inconsistências
