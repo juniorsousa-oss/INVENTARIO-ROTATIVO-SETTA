@@ -50,8 +50,11 @@ jobs:
           assert "signInWithPassword" not in app
           assert "FIREBASE_AUTH_URL" not in app
           assert "setta_shell.render_shell(" in app
-          assert "SETTA UI — App Shell Rounded V1" in shell
-          assert "max-width:1680px!important" in shell
+          assert "SETTA UI — Layout padrão Streamlit" in shell
+          assert "SETTA UI — App Shell Rounded V1" not in shell
+          assert "max-width:1680px!important" not in shell
+          assert "max-width:1780px!important" not in shell
+          assert "box-shadow:0 24px 70px" not in shell
           assert "width:260px!important" in shell
           assert "setta_drawer_toggle" in app
           assert "_render_setta_auth_gate()" in app
