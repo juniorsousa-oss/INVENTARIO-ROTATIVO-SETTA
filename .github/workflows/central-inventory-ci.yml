@@ -67,6 +67,6 @@ jobs:
           assert "consumer_sync_status" in central
           assert "derived_status" in central
           assert "derived_download" in central
-          assert "visual_shell_get" in central
+          assert "visual_get" in central
           print("CENTRAL_INVENTARIO_OK")
           PY
