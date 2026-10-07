@@ -142,7 +142,7 @@ central_contract = [
     "inventory_state_set",
     "derived_status",
     "derived_download",
-    "visual_shell_get",
+    "visual_get",
     '"ui_config": row.get("ui_config") or {}',
 ]
 for token in central_contract:
