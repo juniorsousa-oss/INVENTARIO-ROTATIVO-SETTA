@@ -182,6 +182,7 @@ expected_requirements = {
     "firebase-admin==7.7.0",
     "requests==2.34.2",
     "altair==6.3.0",
+    "Pillow==11.3.0",
 }
 actual = {
     line.strip()
@@ -212,6 +213,17 @@ for token in [
 ]:
     if token not in central:
         fail(f"Operação atômica ausente: {token}")
+
+for token in [
+    "def _global_browser_icon",
+    "central_data.favicon_bytes",
+    "INVENTORY_DATA_EPOCH",
+    "dashboard-chart-grid",
+    "SITUAÇÃO DAS POSIÇÕES CONTADAS",
+    "ACURÁCIA DOS ÚLTIMOS INVENTÁRIOS",
+]:
+    if token not in app:
+        fail(f"Dashboard/favicon/reset ausente: {token}")
 
 for token in [
     "DIVERGENCE_REASONS",
