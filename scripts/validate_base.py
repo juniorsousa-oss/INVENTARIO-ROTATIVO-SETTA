@@ -104,14 +104,24 @@ for token in [
 
 if "SIDEBAR SETTA V1" in app:
     fail("CSS legado da sidebar voltou ao app.py.")
-if "INVENTÁRIO SETTA — LAYOUT FLUIDO FINAL MRP V1" not in app:
-    fail("Override final de layout fluido ausente no entrypoint.")
-if "GESTÃO DE ESTOQUE — REMOVE DEFINITIVAMENTE A BORDA EXTERNA ARREDONDADA" not in app:
-    fail("Override final para remoção da borda externa arredondada ausente.")
-if '.stMain .block-container,\n    .block-container{' in app:
-    fail("Override global voltou a atingir a block-container da sidebar.")
-if app.count("<style>") < 2:
-    fail(f"Quantidade insuficiente de blocos CSS internos: {app.count('<style>')}")
+for forbidden in [
+    "INVENTÁRIO SETTA — LAYOUT FLUIDO FINAL MRP V1",
+    "GESTÃO DE ESTOQUE — REMOVE DEFINITIVAMENTE A BORDA EXTERNA ARREDONDADA",
+]:
+    if forbidden in app:
+        fail(f"Override estrutural paralelo voltou ao app.py: {forbidden}")
+if 'style id="inventory-component-style"' not in app:
+    fail("CSS operacional do Inventário não está isolado do shell canônico.")
+if ":has(#inventory-component-style){display:none!important" not in app:
+    fail("Bloco CSS operacional pode voltar a criar espaçamento antes do header.")
+if "sidebar_auth_form" in app:
+    fail("Formulário anônimo voltou a deformar a sidebar padrão.")
+if "settings_auth_form" not in app:
+    fail("Login administrativo não foi preservado em Configurações.")
+if "BUILD DE DIAGNÓSTICO" in app:
+    fail("Legenda de diagnóstico voltou ao cabeçalho principal.")
+if app.count("<style") != 1:
+    fail(f"Quantidade inesperada de CSS operacional no app.py: {app.count('<style')}")
 
 for token in ["operahub_bootstrap", "inventory_login", "inventory_logout"]:
     if token not in auth:
