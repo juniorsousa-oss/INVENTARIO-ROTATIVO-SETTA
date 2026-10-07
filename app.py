@@ -28,7 +28,7 @@ def _global_browser_icon():
    return image
  except Exception:
   pass
- return '📊'
+ return '📡'
 
 st.set_page_config(
  page_title='GESTÃO DE ESTOQUE | SETTA',
@@ -54,7 +54,7 @@ def now_local():
 # O shell é emitido antes de qualquer leitura remota operacional.
 setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261007-O'
+BUILD_DIAGNOSTICO = 'baseline-setta-20261007-P'
 INVENTORY_DATA_EPOCH='20261007-RESET-01'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
