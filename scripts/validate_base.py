@@ -72,8 +72,12 @@ for token in [
     "left:44px!important",
     "@media(max-width:900px)",
     "if not sidebar_open:",
+    "if sidebar_open:",
     'section[data-testid="stSidebar"][aria-expanded="false"]',
     "display:flex!important",
+    "display:block!important",
+    "visibility:visible!important",
+    "transform:none!important",
     "height:auto!important",
     "max-height:none!important",
 ]:
