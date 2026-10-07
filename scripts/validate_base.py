@@ -64,10 +64,10 @@ for page in expected_pages:
         fail(f"Renderização ausente: {page}")
 
 for token in [
-    "SETTA UI — App Shell Rounded V1",
-    "max-width:1680px!important",
+    "SETTA UI — Layout padrão Streamlit",
+    "max-width:none!important",
     "width:260px!important",
-    "border-radius:24px!important",
+    "border-radius:0!important",
     "top:18px!important",
     "left:44px!important",
     "@media(max-width:900px)",
@@ -77,13 +77,16 @@ for token in [
     "transform:none!important",
     "height:auto!important",
     "max-height:none!important",
-    "padding-bottom:140px!important",
-    "position:sticky!important",
 ]:
     if token not in shell:
         fail(f"Contrato SETTA ausente: {token}")
 
 for forbidden in [
+    "SETTA UI — App Shell Rounded V1",
+    "max-width:1680px!important",
+    "max-width:1780px!important",
+    "border-radius:24px!important",
+    "box-shadow:0 24px 70px",
     "height:calc(100vh - 36px)!important;\n  min-height:0!important;max-height:calc(100vh - 36px)!important;",
     "overflow:hidden!important;background:#F8FAFD!important;",
 ]:
