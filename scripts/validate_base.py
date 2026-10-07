@@ -277,8 +277,8 @@ for token in [
     if token not in auth:
         fail(f"Sessão administrativa ausente: {token}")
 
-if "visual_shell_get" not in central:
-    fail("Identidade visual leve não está sendo utilizada.")
+if "visual_get" not in central:
+    fail("Identidade visual global do Monitor não está sendo utilizada.")
 
 build = re.search(r"BUILD_DIAGNOSTICO\s*=\s*'([^']+)'", app)
 if not build:
