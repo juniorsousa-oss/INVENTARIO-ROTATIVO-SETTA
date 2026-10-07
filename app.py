@@ -113,7 +113,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261007-I'
+BUILD_DIAGNOSTICO = 'baseline-setta-20261007-J'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
@@ -507,6 +507,36 @@ button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:#11
 @media(max-width:1100px){.dashboard-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.dashboard-kpi-grid{grid-template-columns:1fr;gap:.65rem}.dashboard-kpi{min-height:126px;padding:.9rem}.dashboard-kpi-label{min-height:0}.dashboard-kpi-value{font-size:1.75rem}}
 @media(max-width:900px){.section-title{font-size:1.14rem!important}.api-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* GESTÃO DE ESTOQUE — REMOVE DEFINITIVAMENTE A BORDA EXTERNA ARREDONDADA */
+html,body,#root,
+#root > div,
+#root > div > div,
+.stApp,
+[data-testid="stApp"],
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+.stMain,
+section.main{
+  border-radius:0!important;
+  border-left:0!important;
+  border-right:0!important;
+  border-top:0!important;
+  border-bottom:0!important;
+  box-shadow:none!important;
+  max-width:none!important;
+}
+html,body,#root{
+  margin:0!important;
+  padding:0!important;
+  width:100%!important;
+}
+.stApp,
+[data-testid="stApp"],
+[data-testid="stAppViewContainer"]{
+  width:100%!important;
+  margin:0!important;
+}
 </style>
 """,
     unsafe_allow_html=True,
