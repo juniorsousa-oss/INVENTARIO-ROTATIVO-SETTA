@@ -375,3 +375,35 @@ button[kind="primary"],button[data-testid="stBaseButton-primary"]{{background:#1
 </style>""",
         unsafe_allow_html=True,
     )
+
+    # O estado visual do drawer é controlado pelo app. O Streamlit pode manter
+    # aria-expanded="false" no DOM mesmo após o callback do botão ☰; quando o
+    # app pediu abertura, este override final vence a regra nativa de colapso.
+    if sidebar_open:
+        st.markdown(
+            """
+            <style>
+            section[data-testid="stSidebar"],
+            section[data-testid="stSidebar"][aria-expanded="false"]{
+              display:block!important;
+              visibility:visible!important;
+              width:260px!important;
+              min-width:260px!important;
+              max-width:260px!important;
+              flex:0 0 260px!important;
+              flex-basis:260px!important;
+              transform:none!important;
+            }
+            section[data-testid="stSidebar"]>div,
+            section[data-testid="stSidebar"][aria-expanded="false"]>div{
+              display:block!important;
+              visibility:visible!important;
+              width:260px!important;
+              min-width:260px!important;
+              max-width:260px!important;
+              transform:none!important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
