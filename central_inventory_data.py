@@ -312,7 +312,7 @@ def load_visual_config() -> dict:
     # funcionando com o logo/configuração local em vez de cair na inicialização.
     try:
         row = api_call(
-            "visual_shell_get",
+            "visual_get",
             {"app_key": "setta_global"},
             timeout=30,
         ).get("data") or {}
