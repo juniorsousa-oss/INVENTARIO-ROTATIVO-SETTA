@@ -104,8 +104,10 @@ for token in [
 
 if "SIDEBAR SETTA V1" in app:
     fail("CSS legado da sidebar voltou ao app.py.")
-if app.count("<style>") != 1:
-    fail(f"Quantidade inesperada de blocos CSS internos: {app.count('<style>')}")
+if "INVENTÁRIO SETTA — LAYOUT FLUIDO FINAL MRP V1" not in app:
+    fail("Override final de layout fluido ausente no entrypoint.")
+if app.count("<style>") < 2:
+    fail(f"Quantidade insuficiente de blocos CSS internos: {app.count('<style>')}")
 
 for token in ["operahub_bootstrap", "inventory_login", "inventory_logout"]:
     if token not in auth:
