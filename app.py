@@ -89,8 +89,7 @@ st.markdown(
     [data-testid="stAppViewBlockContainer"],
     [data-testid="stAppViewContainer"] .main .block-container,
     [data-testid="stMain"] .block-container,
-    .stMain .block-container,
-    .block-container{
+    .stMain .block-container{
       width:100%!important;
       max-width:none!important;
       margin-left:0!important;
@@ -103,7 +102,9 @@ st.markdown(
     @media (min-width:901px){
       [data-testid="stMainBlockContainer"],
       [data-testid="stAppViewBlockContainer"],
-      .block-container{
+      [data-testid="stAppViewContainer"] .main .block-container,
+      [data-testid="stMain"] .block-container,
+      .stMain .block-container{
         padding-left:2.7rem!important;
         padding-right:2.7rem!important;
       }
@@ -113,7 +114,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261007-J'
+BUILD_DIAGNOSTICO = 'baseline-setta-20261007-K'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
