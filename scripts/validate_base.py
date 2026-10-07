@@ -108,6 +108,8 @@ if "INVENTÁRIO SETTA — LAYOUT FLUIDO FINAL MRP V1" not in app:
     fail("Override final de layout fluido ausente no entrypoint.")
 if "GESTÃO DE ESTOQUE — REMOVE DEFINITIVAMENTE A BORDA EXTERNA ARREDONDADA" not in app:
     fail("Override final para remoção da borda externa arredondada ausente.")
+if '.stMain .block-container,\n    .block-container{' in app:
+    fail("Override global voltou a atingir a block-container da sidebar.")
 if app.count("<style>") < 2:
     fail(f"Quantidade insuficiente de blocos CSS internos: {app.count('<style>')}")
 
@@ -197,6 +199,25 @@ for token in [
 ]:
     if token not in central:
         fail(f"Operação atômica ausente: {token}")
+
+for token in [
+    "DIVERGENCE_REASONS",
+    "DIVERGENCE_TREATMENTS",
+    "def register_divergence_treatment",
+    "def _render_divergence_treatment",
+    "AJUSTAR ESTOQUE",
+    "ENCERRAR SEM AJUSTE",
+    "Ajustes Protheus · Excel",
+    "Ajustes Protheus · CSV",
+    "Seleção de materiais",
+    "AUTOMÁTICA",
+    "MANUAL",
+]:
+    if token not in app:
+        fail(f"Tratativa/seleção de inventário ausente: {token}")
+
+if "pendentes=[r for r in inv.get('rows',[]) if r.get('status')!='FINALIZADO']" not in app:
+    fail("Proteção contra encerramento com item pendente ausente.")
 
 for token in [
     "_session_profile()",
