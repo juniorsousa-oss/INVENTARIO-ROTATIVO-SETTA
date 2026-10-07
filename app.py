@@ -36,7 +36,7 @@ def now_local():
 # O shell é emitido antes de qualquer leitura remota operacional.
 setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261007-M'
+BUILD_DIAGNOSTICO = 'baseline-setta-20261007-N'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
