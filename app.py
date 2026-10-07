@@ -1,6 +1,7 @@
 import os, io, copy, pickle, sqlite3, tempfile, uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from PIL import Image
 import pandas as pd
 import streamlit as st
 import firebase_admin
@@ -9,12 +10,29 @@ import central_inventory_data as central_data
 import setta_shell
 import setta_auth
 
-_GLOBAL_VISUAL_CONFIG={}
-SETTA_UI_CONFIG=setta_shell.build_ui_config({})
+try:
+ _GLOBAL_VISUAL_CONFIG=central_data.load_visual_config()
+except Exception:
+ _GLOBAL_VISUAL_CONFIG={}
+
+SETTA_UI_CONFIG=setta_shell.build_ui_config(
+ _GLOBAL_VISUAL_CONFIG.get('ui_config') or {}
+)
+
+def _global_browser_icon():
+ try:
+  raw=central_data.favicon_bytes(_GLOBAL_VISUAL_CONFIG)
+  if raw:
+   image=Image.open(io.BytesIO(raw))
+   image.load()
+   return image
+ except Exception:
+  pass
+ return '📊'
 
 st.set_page_config(
  page_title='GESTÃO DE ESTOQUE | SETTA',
- page_icon='📦',
+ page_icon=_global_browser_icon(),
  layout='wide',
  initial_sidebar_state='expanded',
 )
@@ -36,7 +54,8 @@ def now_local():
 # O shell é emitido antes de qualquer leitura remota operacional.
 setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261007-N'
+BUILD_DIAGNOSTICO = 'baseline-setta-20261007-O'
+INVENTORY_DATA_EPOCH='20261007-RESET-01'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
@@ -141,7 +160,10 @@ def firestore_load_eligible():
 
 
 _remote_operational_state={}
-if any(
+_force_operational_reload=(
+ st.session_state.get('_inventory_data_epoch')!=INVENTORY_DATA_EPOCH
+)
+if _force_operational_reload or any(
  key not in st.session_state
  for key in ('cfg','inventories','cycles','reports')
 ):
@@ -163,23 +185,40 @@ def _initial_operational_value(key,default):
 if 'cfg' not in st.session_state:
  _saved_cfg=_initial_operational_value('cfg',{}) or {}
  st.session_state.cfg={**DEFAULT,**(_saved_cfg if isinstance(_saved_cfg,dict) else {})}
+
 # A base de estoque é carregada da Central SETTA depois do shell.
 # Firestore/SQLite ficam apenas como contingência se a Central falhar.
 if 'db' not in st.session_state: st.session_state.db=None
 if 'pos' not in st.session_state: st.session_state.pos=None
 if 'eligible' not in st.session_state: st.session_state.eligible=[]
-if 'inventories' not in st.session_state:
- _saved_inventories=_initial_operational_value('inventories',{}) or {}
+
+if _force_operational_reload:
+ _saved_inventories=_remote_operational_state.get('inventories',{}) or {}
+ _saved_cycles=_remote_operational_state.get('cycles',{}) or {}
+ _saved_reports=_remote_operational_state.get('reports',{}) or {}
  st.session_state.inventories=_saved_inventories if isinstance(_saved_inventories,dict) else {}
-if 'cycles' not in st.session_state:
- _saved_cycles=_initial_operational_value('cycles',{}) or {}
  st.session_state.cycles=_saved_cycles if isinstance(_saved_cycles,dict) else {}
+ st.session_state.reports=_saved_reports if isinstance(_saved_reports,dict) else {}
+ st.session_state.selected=None
+ st.session_state.new_inv=False
+ st.session_state['_inventory_data_epoch']=INVENTORY_DATA_EPOCH
+ save('inventories',st.session_state.inventories)
+ save('cycles',st.session_state.cycles)
+ save('reports',st.session_state.reports)
+else:
+ if 'inventories' not in st.session_state:
+  _saved_inventories=_initial_operational_value('inventories',{}) or {}
+  st.session_state.inventories=_saved_inventories if isinstance(_saved_inventories,dict) else {}
+ if 'cycles' not in st.session_state:
+  _saved_cycles=_initial_operational_value('cycles',{}) or {}
+  st.session_state.cycles=_saved_cycles if isinstance(_saved_cycles,dict) else {}
+ if 'reports' not in st.session_state:
+  _saved_reports=_initial_operational_value('reports',{}) or {}
+  st.session_state.reports=_saved_reports if isinstance(_saved_reports,dict) else {}
+
 if 'section' not in st.session_state: st.session_state.section='Dashboard'
 if 'selected' not in st.session_state: st.session_state.selected=None
 if 'new_inv' not in st.session_state: st.session_state.new_inv=False
-if 'reports' not in st.session_state:
- _saved_reports=_initial_operational_value('reports',{}) or {}
- st.session_state.reports=_saved_reports if isinstance(_saved_reports,dict) else {}
 
 cfg=st.session_state.cfg
 config=cfg
@@ -441,7 +480,14 @@ button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:#11
 .dashboard-kpi-caption{margin-top:auto;padding-top:.65rem;color:#718096;font-size:.62rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
 .dashboard-kpi-progress{height:6px;margin:.62rem 0 0;background:#eef2f7;border-radius:999px;overflow:hidden}
 .dashboard-kpi-progress span{display:block;height:100%;border-radius:999px;background:var(--kpi-accent)}
-@media(max-width:1100px){.dashboard-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.dashboard-chart-grid{display:grid;grid-template-columns:minmax(320px,.85fr) minmax(460px,1.35fr);gap:.9rem;margin:.1rem 0 .25rem}
+.dashboard-chart-card{min-width:0;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 5px 18px rgba(15,23,42,.045);padding:1rem 1.05rem .8rem;overflow:hidden}
+.dashboard-chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin:0 0 .35rem}
+.dashboard-chart-kicker{font-size:.59rem;font-weight:900;letter-spacing:.085em;color:#64748b;text-transform:uppercase}
+.dashboard-chart-title{margin:.2rem 0 0;font-size:.86rem;font-weight:900;color:#111827;text-transform:uppercase}
+.dashboard-chart-note{margin:.25rem 0 0;color:#64748b;font-size:.68rem;line-height:1.35}
+.dashboard-empty{min-height:205px;display:flex;align-items:center;justify-content:center;text-align:center;color:#64748b;font-size:.78rem;font-weight:700;border:1px dashed #d8dee8;border-radius:10px;background:#f8fafc}
+@media(max-width:1100px){.dashboard-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-chart-grid{grid-template-columns:1fr}}
 @media(max-width:650px){.dashboard-kpi-grid{grid-template-columns:1fr;gap:.65rem}.dashboard-kpi{min-height:126px;padding:.9rem}.dashboard-kpi-label{min-height:0}.dashboard-kpi-value{font-size:1.75rem}}
 @media(max-width:900px){.section-title{font-size:1.14rem!important}.api-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
@@ -932,11 +978,6 @@ with st.container(key='setta_top_controls'):
   on_click=_setta_toggle_sidebar,
  )
 
-try:
- _GLOBAL_VISUAL_CONFIG=central_data.load_visual_config()
-except Exception:
- _GLOBAL_VISUAL_CONFIG={}
-
 _main_logo=logo_uri()
 _logo_html=(f'<img src="{_main_logo}" alt="SETTA">' if _main_logo else '<div style="font-size:2rem;font-weight:800;color:#202124">SETTA</div>')
 st.markdown(f'<div class="setta-logo-card">{_logo_html}</div>',unsafe_allow_html=True)
@@ -992,35 +1033,87 @@ if active=='Dashboard':
   db=st.session_state.db;items=int((db.saldo_apto>0).sum());valor_apto=float(db.valor_total.sum());rr=[r for x in st.session_state.inventories.values() for r in x['rows']];cnt=[r for r in rr if r['contagens']];div=[r for r in cnt if abs(diff(r,last(r)))>1e-9]
   qtd_cnt=len(cnt);qtd_div=len(div);acc_itens=(100-(qtd_div/items*100)) if items else 100.0;acc_pos=(100-(qtd_div/qtd_cnt*100)) if qtd_cnt else 100.0
   dashboard_kpi_grid(items,valor_apto,qtd_cnt,qtd_div,acc_itens,acc_pos)
-  topic_divider();section_band('02 · INDICADORES','VISÃO GRÁFICA')
-  ch1,ch2=st.columns(2)
-  with ch1:
-   import altair as alt
-   status_df=pd.DataFrame({'Status':['Sem divergência','Com divergência'],'Quantidade':[max(qtd_cnt-qtd_div,0),qtd_div]})
-   chart1=alt.Chart(status_df).mark_bar(cornerRadiusTopLeft=7,cornerRadiusTopRight=7,size=72).encode(
-    x=alt.X('Status:N',sort=['Sem divergência','Com divergência'],axis=alt.Axis(title=None,labelAngle=0)),
-    y=alt.Y('Quantidade:Q',axis=alt.Axis(title=None,grid=True,gridColor='#e5e7eb',gridOpacity=0.28,tickColor='#cbd5e1',labelColor='#475569')),
-    color=alt.value('#111827'),
-    tooltip=[alt.Tooltip('Status:N',title='Status'),alt.Tooltip('Quantidade:Q',title='Posições')]
-   ).properties(height=260,background='transparent')
-   st.altair_chart(chart1,use_container_width=True)
-  with ch2:
-   inv_rows=[]
-   for x in sorted(st.session_state.inventories.values(),key=lambda z:z.get('criado_em','')):
-    total=sum(1 for r in x['rows'] if r['contagens']);dv=sum(1 for r in x['rows'] if r['contagens'] and abs(diff(r,last(r)))>1e-9)
-    if total:inv_rows.extend([{'Inventário':x['documento'],'Status':'Contabilizadas','Quantidade':total},{'Inventário':x['documento'],'Status':'Divergentes','Quantidade':dv}])
-   if inv_rows:
-    chart=pd.DataFrame(inv_rows)
-    chart2=alt.Chart(chart).mark_bar(cornerRadiusTopLeft=5,cornerRadiusTopRight=5,size=26).encode(
-     x=alt.X('Inventário:N',axis=alt.Axis(title=None,labelAngle=-45)),
-     y=alt.Y('Quantidade:Q',axis=alt.Axis(title=None,grid=True,gridColor='#e5e7eb',gridOpacity=0.28,tickColor='#cbd5e1',labelColor='#475569')),
-     xOffset=alt.XOffset('Status:N'),
-     color=alt.value('#111827'),
-     tooltip=[alt.Tooltip('Inventário:N',title='Inventário'),alt.Tooltip('Status:N',title='Status'),alt.Tooltip('Quantidade:Q',title='Posições')]
-    ).properties(height=260,background='transparent')
+  topic_divider();section_band('02 · INDICADORES','ACOMPANHAMENTO DOS INVENTÁRIOS')
+  import altair as alt
+  st.markdown('<div class="dashboard-chart-grid">',unsafe_allow_html=True)
+  c_left,c_right=st.columns([.85,1.35],gap='medium')
+  with c_left:
+   st.markdown(
+    '<div class="dashboard-chart-card">'
+    '<div class="dashboard-chart-head"><div>'
+    '<div class="dashboard-chart-kicker">CONTAGENS</div>'
+    '<div class="dashboard-chart-title">SITUAÇÃO DAS POSIÇÕES CONTADAS</div>'
+    '<div class="dashboard-chart-note">Distribuição entre posições confirmadas e posições com divergência.</div>'
+    '</div></div>',
+    unsafe_allow_html=True,
+   )
+   if qtd_cnt:
+    status_df=pd.DataFrame({
+     'Status':['Sem divergência','Com divergência'],
+     'Quantidade':[max(qtd_cnt-qtd_div,0),qtd_div],
+    })
+    chart1=alt.Chart(status_df).mark_arc(innerRadius=58,outerRadius=86).encode(
+     theta=alt.Theta('Quantidade:Q',stack=True),
+     color=alt.Color(
+      'Status:N',
+      scale=alt.Scale(domain=['Sem divergência','Com divergência'],range=['#16a34a','#ef4444']),
+      legend=alt.Legend(title=None,orient='bottom',direction='horizontal')
+     ),
+     tooltip=[
+      alt.Tooltip('Status:N',title='Status'),
+      alt.Tooltip('Quantidade:Q',title='Posições'),
+     ],
+    ).properties(height=220,background='transparent')
+    st.altair_chart(chart1,use_container_width=True)
+   else:
+    st.markdown('<div class="dashboard-empty">AINDA NÃO EXISTEM CONTAGENS REGISTRADAS.</div>',unsafe_allow_html=True)
+   st.markdown('</div>',unsafe_allow_html=True)
+  with c_right:
+   st.markdown(
+    '<div class="dashboard-chart-card">'
+    '<div class="dashboard-chart-head"><div>'
+    '<div class="dashboard-chart-kicker">HISTÓRICO</div>'
+    '<div class="dashboard-chart-title">ACURÁCIA DOS ÚLTIMOS INVENTÁRIOS</div>'
+    '<div class="dashboard-chart-note">Percentual de posições sem divergência em cada inventário realizado.</div>'
+    '</div></div>',
+    unsafe_allow_html=True,
+   )
+   inv_perf=[]
+   for x in sorted(
+    st.session_state.inventories.values(),
+    key=lambda z:z.get('criado_em',''),
+    reverse=True,
+   )[:8]:
+    total=sum(1 for r in x.get('rows',[]) if r.get('contagens'))
+    dv=sum(
+     1 for r in x.get('rows',[])
+     if r.get('contagens') and abs(diff(r,last(r)))>1e-9
+    )
+    if total:
+     inv_perf.append({
+      'Inventário':x.get('documento',''),
+      'Acurácia':max(0.0,100.0-(dv/total*100.0)),
+      'Posições':total,
+      'Divergentes':dv,
+     })
+   if inv_perf:
+    perf_df=pd.DataFrame(inv_perf)
+    chart2=alt.Chart(perf_df).mark_bar(cornerRadiusEnd=6,size=20).encode(
+     y=alt.Y('Inventário:N',sort=None,axis=alt.Axis(title=None,labelLimit=120)),
+     x=alt.X('Acurácia:Q',scale=alt.Scale(domain=[0,100]),axis=alt.Axis(title=None,format='.0f',grid=True)),
+     color=alt.condition('datum.Acurácia >= 98',alt.value('#16a34a'),alt.value('#d97706')),
+     tooltip=[
+      alt.Tooltip('Inventário:N',title='Inventário'),
+      alt.Tooltip('Acurácia:Q',title='Acurácia',format='.2f'),
+      alt.Tooltip('Posições:Q',title='Posições'),
+      alt.Tooltip('Divergentes:Q',title='Divergentes'),
+     ],
+    ).properties(height=max(220,min(300,44*len(perf_df))),background='transparent')
     st.altair_chart(chart2,use_container_width=True)
    else:
-    st.info('Ainda não existem contagens para gerar o gráfico por inventário.')
+    st.markdown('<div class="dashboard-empty">NENHUM INVENTÁRIO CONCLUÍDO PARA COMPARAÇÃO.</div>',unsafe_allow_html=True)
+   st.markdown('</div>',unsafe_allow_html=True)
+  st.markdown('</div>',unsafe_allow_html=True)
 
 # Inventory
 elif active=='Inventário Rotativo':
