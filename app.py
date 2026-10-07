@@ -36,85 +36,7 @@ def now_local():
 # O shell é emitido antes de qualquer leitura remota operacional.
 setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
 
-# Override final do layout externo: mantém o mesmo comportamento fluido do MRP.
-# Este bloco fica no entrypoint para impedir que um shell antigo em cache volte
-# a limitar largura, altura ou rolagem do Gestão de Estoque.
-st.markdown(
-    """
-    <style>
-    /* INVENTÁRIO SETTA — LAYOUT FLUIDO FINAL MRP V1 */
-    html,body,#root{
-      min-height:100%!important;
-      height:auto!important;
-      max-height:none!important;
-      overflow-y:auto!important;
-      overflow-x:hidden!important;
-    }
-    body{
-      margin:0!important;
-      padding:0!important;
-      background:#F4F7FB!important;
-      overflow-y:auto!important;
-    }
-    .stApp,[data-testid="stApp"]{
-      position:relative!important;
-      inset:auto!important;
-      width:100%!important;
-      max-width:none!important;
-      height:auto!important;
-      min-height:100vh!important;
-      max-height:none!important;
-      margin:0!important;
-      border:0!important;
-      border-radius:0!important;
-      box-shadow:none!important;
-      overflow:visible!important;
-    }
-    [data-testid="stAppViewContainer"],
-    [data-testid="stMain"],
-    .stMain,
-    section.main{
-      position:relative!important;
-      width:100%!important;
-      max-width:none!important;
-      height:auto!important;
-      min-height:100vh!important;
-      max-height:none!important;
-      margin:0!important;
-      border-radius:0!important;
-      overflow-x:hidden!important;
-      overflow-y:visible!important;
-    }
-    [data-testid="stMainBlockContainer"],
-    [data-testid="stAppViewBlockContainer"],
-    [data-testid="stAppViewContainer"] .main .block-container,
-    [data-testid="stMain"] .block-container,
-    .stMain .block-container{
-      width:100%!important;
-      max-width:none!important;
-      margin-left:0!important;
-      margin-right:0!important;
-      box-sizing:border-box!important;
-    }
-    section[data-testid="stSidebar"]{
-      border-radius:0!important;
-    }
-    @media (min-width:901px){
-      [data-testid="stMainBlockContainer"],
-      [data-testid="stAppViewBlockContainer"],
-      [data-testid="stAppViewContainer"] .main .block-container,
-      [data-testid="stMain"] .block-container,
-      .stMain .block-container{
-        padding-left:2.7rem!important;
-        padding-right:2.7rem!important;
-      }
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-BUILD_DIAGNOSTICO = 'baseline-setta-20261007-L'
+BUILD_DIAGNOSTICO = 'baseline-setta-20261007-M'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
 ESTOQUE_ENDERECOS_NAO_DISPONIVEIS = {
@@ -470,7 +392,8 @@ def dashboard_kpi_grid(items,valor_apto,qtd_cnt,qtd_div,acc_itens,acc_pos):
 
 st.markdown(
     """
-<style>
+<style id="inventory-component-style">
+div[data-testid="stElementContainer"]:has(#inventory-component-style){display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important}
 :root{--p:#111827}
 .section-title{margin:0 0 1rem!important;color:#0f172a!important;font-size:1.28rem!important;font-weight:900!important;letter-spacing:-.02em;text-transform:uppercase}
 .section-band{margin:0 0 .95rem!important;padding:.82rem 1rem!important;background:#fff!important;border:1px solid #e5e8ee!important;border-left:5px solid #111827!important;border-radius:12px!important;box-shadow:0 3px 12px rgba(15,23,42,.035)!important}
@@ -522,35 +445,6 @@ button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:#11
 @media(max-width:650px){.dashboard-kpi-grid{grid-template-columns:1fr;gap:.65rem}.dashboard-kpi{min-height:126px;padding:.9rem}.dashboard-kpi-label{min-height:0}.dashboard-kpi-value{font-size:1.75rem}}
 @media(max-width:900px){.section-title{font-size:1.14rem!important}.api-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
-/* GESTÃO DE ESTOQUE — REMOVE DEFINITIVAMENTE A BORDA EXTERNA ARREDONDADA */
-html,body,#root,
-#root > div,
-#root > div > div,
-.stApp,
-[data-testid="stApp"],
-[data-testid="stAppViewContainer"],
-[data-testid="stMain"],
-.stMain,
-section.main{
-  border-radius:0!important;
-  border-left:0!important;
-  border-right:0!important;
-  border-top:0!important;
-  border-bottom:0!important;
-  box-shadow:none!important;
-  max-width:none!important;
-}
-html,body,#root{
-  margin:0!important;
-  padding:0!important;
-  width:100%!important;
-}
-.stApp,
-[data-testid="stApp"],
-[data-testid="stAppViewContainer"]{
-  width:100%!important;
-  margin:0!important;
-}
 </style>
 """,
     unsafe_allow_html=True,
@@ -973,12 +867,12 @@ def _current_inventory_page():
 
 with st.sidebar:
  st.markdown(
-  '<div class="sidebar-brand"><div class="sidebar-brand-title">GESTÃO DE ESTOQUE</div><div class="sidebar-brand-sub">CONTROLE OPERACIONAL SETTA</div></div>',
-  unsafe_allow_html=True
- )
- st.markdown(
+  '<div class="sidebar-brand">'
+  '<div class="sidebar-brand-title">GESTÃO DE ESTOQUE</div>'
+  '<div class="sidebar-brand-sub">CONTROLE OPERACIONAL SETTA</div>'
+  '</div>'
   '<div class="sidebar-section-label">NAVEGAÇÃO</div>',
-  unsafe_allow_html=True
+  unsafe_allow_html=True,
  )
 
  _current=_current_inventory_page()
@@ -992,13 +886,16 @@ with st.sidebar:
    args=(_nav_page,),
   )
 
- st.markdown('<div class="sidebar-divider"></div><div class="sidebar-section-label">SESSÃO</div>',unsafe_allow_html=True)
  _sidebar_user=_auth_user()
  if _sidebar_user:
   _sidebar_name=str(_sidebar_user.get('full_name') or _sidebar_user.get('username') or 'USUÁRIO SETTA')
   st.markdown(
-   f'<div class="sidebar-status-card"><div class="sidebar-status-name">{_sidebar_name}</div>'
-   f'<div class="sidebar-status-value status-ok">{_session_profile().upper()}</div></div>',
+   '<div class="sidebar-divider"></div>'
+   '<div class="sidebar-section-label">SESSÃO</div>'
+   '<div class="sidebar-status-card">'
+   f'<div class="sidebar-status-name">{_sidebar_name}</div>'
+   f'<div class="sidebar-status-meta">{_session_profile().upper()}</div>'
+   '</div>',
    unsafe_allow_html=True,
   )
   if st.button('SAIR',key='setta_auth_logout',use_container_width=True):
@@ -1008,18 +905,6 @@ with st.sidebar:
     pass
    st.session_state.pop('_setta_auth_user',None)
    st.rerun()
- else:
-  st.caption('Sessão anônima · perfil Operador')
-  with st.form('sidebar_auth_form',clear_on_submit=False):
-   _login=st.text_input('USUÁRIO OU E-MAIL',key='sidebar_auth_login')
-   _password=st.text_input('SENHA',type='password',key='sidebar_auth_password')
-   _submit=st.form_submit_button('IDENTIFICAR USUÁRIO',use_container_width=True)
-  if _submit:
-   try:
-    if _authenticate_user(_login,_password):st.rerun()
-    else:st.error('Usuário ou senha inválidos.')
-   except Exception as exc:
-    st.error(f'Falha ao autenticar: {exc}')
 
  _sidebar_status_slot=st.empty()
  _sidebar_status_slot.markdown(
@@ -1057,7 +942,6 @@ _logo_html=(f'<img src="{_main_logo}" alt="SETTA">' if _main_logo else '<div sty
 st.markdown(f'<div class="setta-logo-card">{_logo_html}</div>',unsafe_allow_html=True)
 st.markdown('<h1 class="app-title">GESTÃO DE ESTOQUE | SETTA</h1>',unsafe_allow_html=True)
 st.markdown('<p class="app-sub">INVENTÁRIO ROTATIVO • ACURÁCIA • CONTAGENS • HISTÓRICO</p>',unsafe_allow_html=True)
-st.caption(f'BUILD DE DIAGNÓSTICO · {BUILD_DIAGNOSTICO}')
 
 _render_setta_auth_gate()
 
@@ -1549,7 +1433,19 @@ elif active=='Reportar Inconsistências':
 elif active=='Configurações':
  if _session_profile()!='Gestor':
   section_band('01 · ACESSO','CONFIGURAÇÕES RESTRITAS','AUTENTIQUE UM USUÁRIO ADMINISTRADOR SETTA PARA ALTERAR CONFIGURAÇÕES.')
-  st.warning('Acesso restrito ao perfil Gestor.')
+  if not _auth_user():
+   with st.form('settings_auth_form',clear_on_submit=False):
+    _settings_login=st.text_input('USUÁRIO OU E-MAIL',key='settings_auth_login')
+    _settings_password=st.text_input('SENHA',type='password',key='settings_auth_password')
+    _settings_submit=st.form_submit_button('IDENTIFICAR USUÁRIO',type='primary',use_container_width=True)
+   if _settings_submit:
+    try:
+     if _authenticate_user(_settings_login,_settings_password):st.rerun()
+     else:st.error('Usuário ou senha inválidos.')
+    except Exception as exc:
+     st.error(f'Falha ao autenticar: {exc}')
+  else:
+   st.warning('O usuário autenticado não possui perfil Gestor.')
   st.stop()
  tab_inv,tab_api=st.tabs(['INVENTÁRIO','ACOMPANHAMENTO DE API'])
  with tab_inv:
