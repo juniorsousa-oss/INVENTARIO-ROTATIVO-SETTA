@@ -106,6 +106,8 @@ if "SIDEBAR SETTA V1" in app:
     fail("CSS legado da sidebar voltou ao app.py.")
 if "INVENTÁRIO SETTA — LAYOUT FLUIDO FINAL MRP V1" not in app:
     fail("Override final de layout fluido ausente no entrypoint.")
+if "GESTÃO DE ESTOQUE — REMOVE DEFINITIVAMENTE A BORDA EXTERNA ARREDONDADA" not in app:
+    fail("Override final para remoção da borda externa arredondada ausente.")
 if app.count("<style>") < 2:
     fail(f"Quantidade insuficiente de blocos CSS internos: {app.count('<style>')}")
 
