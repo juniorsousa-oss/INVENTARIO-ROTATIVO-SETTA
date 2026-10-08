@@ -311,6 +311,23 @@ for token in [
     if token not in migration:
         fail(f"Proteção da exclusão ausente: {token}")
 
+# A coluna lateral deve ocupar a altura real da página, inclusive após 100vh.
+for token in [
+    "align-items:stretch!important",
+    "align-self:stretch!important",
+    "min-height:100vh!important",
+    "max-height:none!important",
+    "position:sticky!important",
+]:
+    if token not in shell:
+        fail(f"Menu lateral SETTA não acompanha a página: {token}")
+
+if re.search(
+    r'section\[data-testid="stSidebar"\]\s*\{\{[^}]*height:100vh!important',
+    shell, re.S
+):
+    fail("Menu lateral voltou à altura fixa da tela.")
+
 build = re.search(r"BUILD_DIAGNOSTICO\s*=\s*'([^']+)'", app)
 if not build:
     fail("BUILD_DIAGNOSTICO ausente.")
