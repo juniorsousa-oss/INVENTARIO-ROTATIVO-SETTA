@@ -139,6 +139,9 @@ body{{
   box-shadow:none!important;
 }}
 [data-testid="stAppViewContainer"]{{
+  /* Faz a coluna lateral acompanhar toda a altura real do conteúdo. */
+  display:flex!important;
+  align-items:stretch!important;
   position:relative!important;
   inset:auto!important;
   width:100%!important;
@@ -216,6 +219,14 @@ body{{
   box-shadow:0 2px 8px rgba(15,23,42,.06)!important;
 }}
 section[data-testid="stSidebar"]{{
+  /* O sidebar nativo usa altura de viewport; no layout SETTA a altura
+     deve crescer junto com o conteúdo principal, não parar em 100vh. */
+  position:relative!important;
+  inset:auto!important;
+  align-self:stretch!important;
+  height:auto!important;
+  min-height:100vh!important;
+  max-height:none!important;
   background:{_surface_background}!important;
   border-right:1px solid #e8ebf0!important;
   border-radius:0!important;
@@ -227,6 +238,13 @@ section[data-testid="stSidebar"]{{
   overflow:hidden!important;
 }}
 section[data-testid="stSidebar"]>div{{
+  /* Conteúdo acessível durante a rolagem; fundo pertence à coluna externa. */
+  position:sticky!important;
+  top:0!important;
+  height:auto!important;
+  max-height:100vh!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
   width:260px!important;
   min-width:260px!important;
   max-width:260px!important;
