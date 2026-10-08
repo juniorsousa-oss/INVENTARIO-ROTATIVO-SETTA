@@ -241,14 +241,19 @@ section[data-testid="stSidebar"] .block-container{{
   padding-left:16px!important;
   padding-right:16px!important;
 }}
-section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{{gap:0!important;row-gap:0!important}}
+/* Alinhamento da navegação SETTA, sessão e fontes. */
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{{gap:.42rem!important;row-gap:.42rem!important}}
+section[data-testid="stSidebar"] [data-testid="stElementContainer"]{{min-width:0!important}}
+section[data-testid="stSidebar"] .st-key-setta_auth_logout{{margin-top:9px!important}}
+section[data-testid="stSidebar"] .st-key-setta_auth_logout button{{min-height:38px!important;border-radius:9px!important}}
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p{{margin:0!important}}
 .sidebar-brand{{
   width:100%!important;
   background:#f8fafc!important;
   border:1px solid #e5e8ee!important;
   border-radius:12px!important;
   padding:14px 16px!important;
-  margin:0 0 20px 0!important;
+  margin:0 0 12px 0!important;
 }}
 .sidebar-brand-title{{
   margin:0!important;padding:0!important;font-size:15px!important;font-weight:800!important;
@@ -267,7 +272,7 @@ section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(.side
 section[data-testid="stSidebar"] [class*="st-key-setta_nav_"]{{margin:0 0 2px 0!important;padding:0!important}}
 section[data-testid="stSidebar"] .st-key-setta_nav_0{{margin-top:8px!important}}
 section[data-testid="stSidebar"] [class*="st-key-setta_nav_"] button{{
-  position:relative!important;width:100%!important;min-height:42px!important;height:42px!important;max-height:42px!important;
+  position:relative!important;width:100%!important;min-height:44px!important;height:44px!important;max-height:44px!important;
   margin:0!important;padding:0 12px 0 24px!important;border-radius:10px!important;
   justify-content:flex-start!important;text-align:left!important;box-shadow:none!important;
 }}
@@ -289,14 +294,14 @@ section[data-testid="stSidebar"] [class*="st-key-setta_nav_"] button[data-testid
   content:""!important;position:absolute!important;left:7px!important;top:50%!important;width:4px!important;height:20px!important;
   border-radius:999px!important;background:#ef4444!important;transform:translateY(-50%)!important;
 }}
-.sidebar-divider{{display:block!important;width:100%!important;height:1px!important;min-height:1px!important;background:#d1d5db!important;margin:18px 0 20px 0!important;padding:0!important}}
-.sidebar-status-card{{width:100%!important;background:#f8fafc!important;border:1px solid #e5e8ee!important;border-radius:10px!important;padding:12px 14px!important;margin:0!important;color:#6b7280!important}}
+.sidebar-divider{{display:block!important;width:100%!important;height:1px!important;min-height:1px!important;background:#d1d5db!important;margin:18px 0 14px 0!important;padding:0!important}}
+.sidebar-status-card{{width:100%!important;background:#f8fafc!important;border:1px solid #e5e8ee!important;border-radius:10px!important;padding:13px 14px!important;margin:0!important;color:#6b7280!important;overflow-wrap:anywhere!important}}
 .sidebar-status-name{{margin:0!important;padding:0!important;font-size:11px!important;line-height:14px!important;font-weight:800!important;color:#64748b!important;text-transform:uppercase!important;letter-spacing:.025em!important}}
 .sidebar-status-value{{margin:4px 0 0 0!important;padding:0!important;font-size:13px!important;line-height:16px!important;font-weight:900!important;text-transform:uppercase!important}}
 .sidebar-status-value.status-ok{{color:#16a34a!important}}
 .sidebar-status-value.status-warning{{color:#f59e0b!important}}
 .sidebar-status-value.status-error{{color:#ef4444!important}}
-.sidebar-status-meta{{margin:6px 0 0 0!important;padding:0!important;color:#6b7280!important;font-size:11px!important;line-height:15px!important;text-transform:uppercase!important}}
+.sidebar-status-meta{{margin:6px 0 0 0!important;padding:0!important;color:#6b7280!important;font-size:11px!important;line-height:16px!important;text-transform:uppercase!important;overflow-wrap:anywhere!important}}
 [data-testid="stAppViewContainer"] > .main,[data-testid="stAppViewContainer"] .main,[data-testid="stMain"],.stMain{{width:100%!important;max-width:100%!important;margin-left:0!important;margin-right:0!important}}
 [data-testid="stAppViewContainer"] .main .block-container,[data-testid="stMain"] .block-container,.stMain .block-container{{width:100%!important;max-width:100%!important;margin-left:0!important;margin-right:0!important}}
 section[data-testid="stSidebar"][aria-expanded="false"]{{width:0!important;min-width:0!important;max-width:0!important;flex:0 0 0!important;flex-basis:0!important}}
