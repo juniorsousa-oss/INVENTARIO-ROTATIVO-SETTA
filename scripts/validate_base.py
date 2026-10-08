@@ -280,6 +280,37 @@ for token in [
 if "visual_get" not in central:
     fail("Identidade visual global do Monitor não está sendo utilizada.")
 
+# Proteções contra regressões desta revisão.
+for token in [
+    "def delete_open_inventory(",
+    "delete_inventory_document(doc,_session_auth_token())",
+    "inventory_delete_confirmation",
+    "CONFIRMAR EXCLUSÃO",
+    "if _session_profile()!='Gestor' or not inv or inv.get('status')=='FECHADO'",
+    "if x.get('status')=='FECHADO'",
+]:
+    if token not in app:
+        fail(f"Exclusão ou histórico alterado indevidamente: {token}")
+
+for token in ["inventory_document_delete", "def delete_inventory_document("]:
+    if token not in central:
+        fail(f"Contrato de exclusão ausente: {token}")
+
+if "O perfil Gestor é liberado somente" in app or "MODO OPERACIONAL:**" in app:
+    fail("Textos explicativos removidos voltaram.")
+
+if '[data-testid="stVerticalBlock"]{{gap:0!important;row-gap:0!important}}' in shell:
+    fail("Sidebar voltou a eliminar o espaçamento de todas as seções.")
+
+migration = read("supabase/migrations/20261008_inventory_delete_open.sql")
+for token in [
+    "inventario_delete_open_document", "inventario_deleted_documents",
+    "INVENTARIO_FECHADO_NAO_PODE_EXCLUIR", "INVENTARIO_EXCLUIDO",
+    "grant execute on function public.inventario_delete_open_document",
+]:
+    if token not in migration:
+        fail(f"Proteção da exclusão ausente: {token}")
+
 build = re.search(r"BUILD_DIAGNOSTICO\s*=\s*'([^']+)'", app)
 if not build:
     fail("BUILD_DIAGNOSTICO ausente.")
