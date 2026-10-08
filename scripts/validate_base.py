@@ -323,7 +323,7 @@ for token in [
         fail(f"Menu lateral SETTA não acompanha a página: {token}")
 
 if re.search(
-    r'section\[data-testid="stSidebar"\]\s*\{\{[^}]*height:100vh!important',
+    r'section\[data-testid="stSidebar"\]\s*\{\{[^}]*(?<!-)height:100vh!important',
     shell, re.S
 ):
     fail("Menu lateral voltou à altura fixa da tela.")
