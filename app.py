@@ -54,7 +54,7 @@ def now_local():
 # O shell é emitido antes de qualquer leitura remota operacional.
 setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
 
-BUILD_DIAGNOSTICO = 'baseline-setta-20261007-P'
+BUILD_DIAGNOSTICO = 'inventory-20261008-gestor-ui-delete'
 INVENTORY_DATA_EPOCH='20261007-RESET-01'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
@@ -645,6 +645,29 @@ def persist_inv(inv):
   st.session_state['_operational_persistence_error']=str(exc)
   return False
 
+def delete_open_inventory(documento):
+ doc=str(documento or '').strip()
+ inv=st.session_state.inventories.get(doc)
+ if _session_profile()!='Gestor' or not inv or inv.get('status')=='FECHADO':
+  st.session_state['_inventory_delete_error']='EXCLUSÃO PERMITIDA SOMENTE AO GESTOR PARA INVENTÁRIOS EM ABERTO.'
+  return False
+ try:
+  central_data.delete_inventory_document(doc,_session_auth_token())
+  st.session_state.inventories.pop(doc,None)
+  save('inventories',st.session_state.inventories)
+  if st.session_state.get('selected')==doc:st.session_state.selected=None
+  st.session_state.pop('delete_inv_target',None)
+  st.session_state.pop('_inventory_delete_error',None)
+  st.session_state['_inventory_delete_success']=doc
+  return True
+ except Exception as exc:
+  message=str(exc)
+  if 'SESSION_INVALID_OR_EXPIRED' in message or 'AUTH_REQUIRED' in message:
+   st.session_state.pop('_setta_auth_user',None)
+  st.session_state['_inventory_delete_error']=message
+  return False
+
+
 def addcount(r,q,cm,stage):
  stamp=now_local()
  r['contagens'].append({
@@ -1035,94 +1058,71 @@ if active=='Dashboard':
   dashboard_kpi_grid(items,valor_apto,qtd_cnt,qtd_div,acc_itens,acc_pos)
   topic_divider();section_band('02 · INDICADORES','ACOMPANHAMENTO DOS INVENTÁRIOS')
   import altair as alt
-  st.markdown('<div class="dashboard-chart-grid">',unsafe_allow_html=True)
-  c_left,c_right=st.columns([.85,1.35],gap='medium')
+  c_left,c_right=st.columns([1,1.45],gap='large')
   with c_left:
-   st.markdown(
-    '<div class="dashboard-chart-card">'
-    '<div class="dashboard-chart-head"><div>'
-    '<div class="dashboard-chart-kicker">CONTAGENS</div>'
-    '<div class="dashboard-chart-title">SITUAÇÃO DAS POSIÇÕES CONTADAS</div>'
-    '<div class="dashboard-chart-note">Distribuição entre posições confirmadas e posições com divergência.</div>'
-    '</div></div>',
-    unsafe_allow_html=True,
-   )
-   if qtd_cnt:
-    status_df=pd.DataFrame({
-     'Status':['Sem divergência','Com divergência'],
-     'Quantidade':[max(qtd_cnt-qtd_div,0),qtd_div],
-    })
-    chart1=alt.Chart(status_df).mark_arc(innerRadius=58,outerRadius=86).encode(
-     theta=alt.Theta('Quantidade:Q',stack=True),
-     color=alt.Color(
-      'Status:N',
-      scale=alt.Scale(domain=['Sem divergência','Com divergência'],range=['#16a34a','#ef4444']),
-      legend=alt.Legend(title=None,orient='bottom',direction='horizontal')
-     ),
-     tooltip=[
-      alt.Tooltip('Status:N',title='Status'),
-      alt.Tooltip('Quantidade:Q',title='Posições'),
-     ],
-    ).properties(height=220,background='transparent')
-    st.altair_chart(chart1,use_container_width=True)
-   else:
-    st.markdown('<div class="dashboard-empty">AINDA NÃO EXISTEM CONTAGENS REGISTRADAS.</div>',unsafe_allow_html=True)
-   st.markdown('</div>',unsafe_allow_html=True)
-  with c_right:
-   st.markdown(
-    '<div class="dashboard-chart-card">'
-    '<div class="dashboard-chart-head"><div>'
-    '<div class="dashboard-chart-kicker">HISTÓRICO</div>'
-    '<div class="dashboard-chart-title">ACURÁCIA DOS ÚLTIMOS INVENTÁRIOS</div>'
-    '<div class="dashboard-chart-note">Percentual de posições sem divergência em cada inventário realizado.</div>'
-    '</div></div>',
-    unsafe_allow_html=True,
-   )
-   inv_perf=[]
-   for x in sorted(
-    st.session_state.inventories.values(),
-    key=lambda z:z.get('criado_em',''),
-    reverse=True,
-   )[:8]:
-    total=sum(1 for r in x.get('rows',[]) if r.get('contagens'))
-    dv=sum(
-     1 for r in x.get('rows',[])
-     if r.get('contagens') and abs(diff(r,last(r)))>1e-9
-    )
-    if total:
-     inv_perf.append({
-      'Inventário':x.get('documento',''),
-      'Acurácia':max(0.0,100.0-(dv/total*100.0)),
-      'Posições':total,
-      'Divergentes':dv,
+   with st.container(border=True):
+    st.markdown('**SITUAÇÃO DAS POSIÇÕES CONTADAS**')
+    if qtd_cnt:
+     status_df=pd.DataFrame({
+      'Status':['Sem divergência','Com divergência'],
+      'Quantidade':[max(qtd_cnt-qtd_div,0),qtd_div],
      })
-   if inv_perf:
-    perf_df=pd.DataFrame(inv_perf)
-    chart2=alt.Chart(perf_df).mark_bar(cornerRadiusEnd=6,size=20).encode(
-     y=alt.Y('Inventário:N',sort=None,axis=alt.Axis(title=None,labelLimit=120)),
-     x=alt.X('Acurácia:Q',scale=alt.Scale(domain=[0,100]),axis=alt.Axis(title=None,format='.0f',grid=True)),
-     color=alt.condition('datum.Acurácia >= 98',alt.value('#16a34a'),alt.value('#d97706')),
-     tooltip=[
-      alt.Tooltip('Inventário:N',title='Inventário'),
-      alt.Tooltip('Acurácia:Q',title='Acurácia',format='.2f'),
-      alt.Tooltip('Posições:Q',title='Posições'),
-      alt.Tooltip('Divergentes:Q',title='Divergentes'),
-     ],
-    ).properties(height=max(220,min(300,44*len(perf_df))),background='transparent')
-    st.altair_chart(chart2,use_container_width=True)
-   else:
-    st.markdown('<div class="dashboard-empty">NENHUM INVENTÁRIO CONCLUÍDO PARA COMPARAÇÃO.</div>',unsafe_allow_html=True)
-   st.markdown('</div>',unsafe_allow_html=True)
-  st.markdown('</div>',unsafe_allow_html=True)
+     donut=alt.Chart(status_df).mark_arc(innerRadius=66,outerRadius=96).encode(
+      theta=alt.Theta('Quantidade:Q',stack=True),
+      color=alt.Color('Status:N',scale=alt.Scale(
+       domain=['Sem divergência','Com divergência'],range=['#16a34a','#ef4444']
+      ),legend=None),
+      tooltip=[alt.Tooltip('Status:N',title='Status'),alt.Tooltip('Quantidade:Q',title='Posições')],
+     )
+     center=alt.Chart(pd.DataFrame({'Total':[qtd_cnt]})).mark_text(
+      fontSize=27,fontWeight='bold',color='#111827'
+     ).encode(text=alt.Text('Total:Q',format=',d'))
+     st.altair_chart((donut+center).properties(height=235,background='transparent').configure_view(stroke=None),use_container_width=True)
+     ok_col,div_col=st.columns(2)
+     ok_col.metric('SEM DIVERGÊNCIA',max(qtd_cnt-qtd_div,0))
+     div_col.metric('COM DIVERGÊNCIA',qtd_div)
+    else:
+     st.info('NENHUMA CONTAGEM REGISTRADA.')
+  with c_right:
+   with st.container(border=True):
+    st.markdown('**ACURÁCIA DOS ÚLTIMOS INVENTÁRIOS**')
+    inv_perf=[]
+    _closed_history=[x for x in st.session_state.inventories.values() if x.get('status')=='FECHADO']
+    for x in sorted(_closed_history,key=lambda z:z.get('criado_em',''),reverse=True)[:8]:
+     total=sum(1 for r in x.get('rows',[]) if r.get('contagens'))
+     dv=sum(1 for r in x.get('rows',[]) if r.get('contagens') and abs(diff(r,last(r)))>1e-9)
+     if total:
+      inv_perf.append({
+       'Inventário':x.get('documento',''),
+       'Acurácia':max(0.0,100.0-(dv/total*100.0)),
+       'Posições':total,'Divergentes':dv,
+      })
+    if inv_perf:
+     perf_df=pd.DataFrame(inv_perf)
+     perf_df['Rótulo']=perf_df['Acurácia'].map(lambda v:f'{v:.1f}%')
+     bars=alt.Chart(perf_df).mark_bar(cornerRadiusEnd=6,size=24).encode(
+      y=alt.Y('Inventário:N',sort=None,axis=alt.Axis(title=None,labelLimit=150,labelFontSize=12)),
+      x=alt.X('Acurácia:Q',scale=alt.Scale(domain=[0,112]),
+       axis=alt.Axis(title='ACURÁCIA (%)',values=[0,25,50,75,100],grid=True)),
+      color=alt.condition('datum.Acurácia >= 98',alt.value('#16a34a'),alt.value('#d97706')),
+      tooltip=[alt.Tooltip('Inventário:N',title='Inventário'),
+       alt.Tooltip('Acurácia:Q',title='Acurácia (%)',format='.1f'),
+       alt.Tooltip('Posições:Q',title='Posições'),
+       alt.Tooltip('Divergentes:Q',title='Divergentes')],
+     )
+     labels=alt.Chart(perf_df).mark_text(align='left',dx=7,fontWeight='bold',fontSize=12).encode(
+      y=alt.Y('Inventário:N',sort=None),x='Acurácia:Q',text='Rótulo:N',
+     )
+     st.altair_chart((bars+labels).properties(height=max(240,48*len(perf_df)),background='transparent').configure_view(stroke=None),use_container_width=True)
+    else:
+     st.info('NENHUM INVENTÁRIO FECHADO PARA COMPARAÇÃO.')
 
 # Inventory
 elif active=='Inventário Rotativo':
  section_band('01 · INVENTÁRIO','CONTROLE E EXECUÇÃO')
  if st.session_state.db is None:st.info('Aguardando sincronização automática da base de estoque pela API.')
  else:
-  a,b=st.columns([2,1])
-  a.markdown(f'**MODO OPERACIONAL:** {_session_profile().upper()}')
-  a.caption('O perfil Gestor é liberado somente para usuário SETTA autenticado com permissão administrativa.')
+  _,b=st.columns([2,1])
   if b.button(config['new_inventory_text'],type='primary',use_container_width=True):st.session_state.new_inv=True;st.rerun()
   if st.session_state.new_inv:
    with st.container(border=True):
@@ -1190,7 +1190,12 @@ elif active=='Inventário Rotativo':
    for inv in items:
     with st.container(border=True):
      s=len(inv['rows']);prod=len({r['codigo'] for r in inv['rows']});a,b,c,d=st.columns([2.2,1.5,1,1]);a.markdown(f'**{inv["documento"]}**');a.caption(f'Ciclo {inv["ciclo"]} · {inv["data"]}');b.write(f'**{inv["status"]}**');c.metric('Produtos',prod);d.metric('Posições',s)
-     if st.button('Abrir',key='op_'+inv['documento']):st.session_state.selected=inv['documento'];st.rerun()
+     _show_delete=_session_profile()=='Gestor' and inv.get('status')!='FECHADO'
+     _open_col,_delete_col=st.columns(2) if _show_delete else (st.container(),None)
+     if _open_col.button('ABRIR',key='op_'+inv['documento'],use_container_width=True):
+      st.session_state.selected=inv['documento'];st.rerun()
+     if _delete_col is not None and _delete_col.button('EXCLUIR',key='del_'+inv['documento'],use_container_width=True):
+      st.session_state.delete_inv_target=inv['documento'];st.rerun()
   all_inv=sorted(st.session_state.inventories.values(),key=lambda x:x.get('criado_em',''),reverse=True)
   open_inv=[x for x in all_inv if x.get('status')!='FECHADO']
   closed_inv=[x for x in all_inv if x.get('status')=='FECHADO']
@@ -1201,6 +1206,26 @@ elif active=='Inventário Rotativo':
   with tab_closed:
    if closed_inv:render_inventory_cards(closed_inv)
    else:st.info('Nenhum inventário fechado.')
+  if st.session_state.pop('_inventory_delete_success',None):
+   st.success('INVENTÁRIO EXCLUÍDO. AS CONTAGENS FORAM DESCARTADAS.')
+  if st.session_state.get('_inventory_delete_error'):
+   st.error('NÃO FOI POSSÍVEL EXCLUIR: '+str(st.session_state['_inventory_delete_error']))
+  _delete_target=st.session_state.get('delete_inv_target')
+  _delete_inv=st.session_state.inventories.get(_delete_target) if _delete_target else None
+  if _delete_inv and _delete_inv.get('status')!='FECHADO' and _session_profile()=='Gestor':
+   with st.container(border=True):
+    st.warning(f'EXCLUIR INVENTÁRIO {_delete_target}? ESTA AÇÃO É IRREVERSÍVEL E DESCARTA TODAS AS CONTAGENS DESTE DOCUMENTO.')
+    _typed=st.text_input('DIGITE O NÚMERO DO INVENTÁRIO PARA CONFIRMAR',key='inventory_delete_confirmation',placeholder=_delete_target)
+    _yes,_no=st.columns(2)
+    if _yes.button('CONFIRMAR EXCLUSÃO',key='confirm_delete_open_inv',type='primary',use_container_width=True,disabled=_typed.strip()!=_delete_target):
+     delete_open_inventory(_delete_target)
+     st.rerun()
+    if _no.button('CANCELAR EXCLUSÃO',key='cancel_delete_open_inv',use_container_width=True):
+     st.session_state.pop('delete_inv_target',None)
+     st.session_state.pop('_inventory_delete_error',None)
+     st.rerun()
+  elif _delete_target:
+   st.session_state.pop('delete_inv_target',None)
   doc=st.session_state.selected
   if doc in st.session_state.inventories:
    inv=st.session_state.inventories[doc];st.divider();st.markdown(f'### Inventário {doc} — {inv["status"]}')
