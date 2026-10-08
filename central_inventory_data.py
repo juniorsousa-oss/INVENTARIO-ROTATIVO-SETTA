@@ -140,6 +140,18 @@ def save_inventory_report(report_id: str, report: dict) -> dict:
     ).get("data") or {}
 
 
+def delete_inventory_document(documento: str, auth_token: str) -> dict:
+    """Exclui um inventário aberto de maneira transacional e autorizada."""
+    return api_call(
+        "inventory_document_delete",
+        {
+            "documento": str(documento).strip(),
+            "auth_token": str(auth_token or "").strip(),
+        },
+        timeout=45,
+    ).get("data") or {}
+
+
 def merge_inventory_cycles(values: dict) -> dict:
     return api_call(
         "inventory_cycles_merge",
