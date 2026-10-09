@@ -525,28 +525,57 @@ def build_db(an,end,eligible):
 
 def nextdoc():
  return central_data.next_inventory_document()
+def _counted_cycles(code):
+ return int(st.session_state.cycles.get(str(code),0) or 0)
+
+def _open_inventory_codes():
+ return {
+  str(r.get('codigo'))
+  for inv in st.session_state.inventories.values()
+  if inv.get('status')!='FECHADO'
+  for r in inv.get('rows',[])
+ }
+
+def _eligible_priority_frame(db,include_open=False):
+ eligible=db[(db.saldo_apto>0)&(db.valor_unitario>0)].copy()
+ eligible['cc']=eligible.codigo.astype(str).map(_counted_cycles)
+ if not include_open:
+  busy=_open_inventory_codes()
+  eligible=eligible[~eligible.codigo.astype(str).isin(busy)]
+ return eligible
+
 def cycle():
- codes=st.session_state.db.loc[st.session_state.db.saldo_apto>0,'codigo'].astype(str);return min([int(st.session_state.cycles.get(c,0)) for c in codes],default=0)+1
+ if st.session_state.db is None:return 1
+ frame=_eligible_priority_frame(st.session_state.db,include_open=True)
+ return (int(frame.cc.min()) if not frame.empty else 0)+1
+
 def select_products(db,n,urgent_codes=None):
- w=db[(db.saldo_apto>0)&(db.valor_unitario>0)].copy();w['cc']=w.codigo.astype(str).map(lambda c:int(st.session_state.cycles.get(c,0)));m=w.cc.min();w=w[w.cc==m];u=w.sort_values(['classificacao_r_un','codigo'],na_position='last');t=w.sort_values(['classificacao_r_total','codigo'],na_position='last');nu=n//2;sel=[]
- for c in u.codigo:
-  if len(sel)>=nu:break
-  if c not in sel:sel.append(c)
- for c in t.codigo:
-  if len(sel)>=n:break
-  if c not in sel:sel.append(c)
- urgent_codes=[str(c) for c in (urgent_codes or [])]
- code_set=set(db.codigo.astype(str))
- urgent_available=[c for c in urgent_codes if c in code_set and c not in sel]
- for c in urgent_available:
-  sel.append(c)
- target=n+len(urgent_available)
- if len(sel)<target:
-  for c in pd.concat([u,t]).drop_duplicates('codigo').codigo:
-   c=str(c)
-   if c not in sel:sel.append(c)
-   if len(sel)>=target:break
- return db[db.codigo.astype(str).isin(sel)].copy()
+ """Menor número de ciclos primeiro; urgências podem antecipar a fila."""
+ available=_eligible_priority_frame(db)
+ if available.empty:return available.drop(columns=['cc'],errors='ignore')
+ codes=set(available.codigo.astype(str))
+ urgent=[str(c) for c in dict.fromkeys(urgent_codes or []) if str(c) in codes]
+ ordinary=available[~available.codigo.astype(str).isin(urgent)].copy()
+ selected=[]
+ # Alterna o ranking unitário e o ranking de valor total em cada faixa de ciclos.
+ for count in sorted(ordinary.cc.unique()):
+  group=ordinary[ordinary.cc==count]
+  by_unit=group.sort_values(['classificacao_r_un','codigo'],na_position='last')
+  by_total=group.sort_values(['classificacao_r_total','codigo'],na_position='last')
+  unit_codes=by_unit.codigo.astype(str).tolist()
+  total_codes=by_total.codigo.astype(str).tolist()
+  while (unit_codes or total_codes) and len(selected)<int(n):
+   for ranking in (unit_codes,total_codes):
+    while ranking:
+     code=ranking.pop(0)
+     if code not in selected:
+      selected.append(code)
+      break
+    if len(selected)>=int(n):break
+  if len(selected)>=int(n):break
+ # As constatações de inconsistência não consomem as vagas do ciclo regular.
+ return db[db.codigo.astype(str).isin(selected+urgent)].copy()
+
 def make_rows(sel,pos):
  rows=[]
  for _,p in sel.iterrows():
@@ -1135,8 +1164,11 @@ elif active=='Inventário Rotativo':
     if selection_mode=='AUTOMÁTICA':
      n=st.number_input('Quantidade de produtos distintos',1,500,10,key='inventory_auto_qty')
     else:
-     _eligible_products=st.session_state.db[
-      (st.session_state.db.saldo_apto>0)&(st.session_state.db.valor_unitario>0)
+     _priority=_eligible_priority_frame(st.session_state.db)
+     _urgent_codes={str(rep.get('codigo')) for rep in st.session_state.reports.values() if rep.get('status')=='ABERTO' and rep.get('equipe')=='INVENTÁRIO ROTATIVO'}
+     _min_cycle=_priority.cc.min() if not _priority.empty else -1
+     _eligible_products=_priority[
+      (_priority.cc==_min_cycle)|_priority.codigo.astype(str).isin(_urgent_codes)
      ][['codigo','descricao']].drop_duplicates('codigo').copy()
      _manual_map={
       f'{str(row.codigo)} — {str(row.descricao)}':str(row.codigo)
@@ -1154,7 +1186,14 @@ elif active=='Inventário Rotativo':
     if x.button('Criar inventário',type='primary',use_container_width=True):
      urgent_codes=sorted({str(rep.get('codigo')) for rep in st.session_state.reports.values() if rep.get('status')=='ABERTO' and rep.get('equipe')=='INVENTÁRIO ROTATIVO'})
      if selection_mode=='MANUAL':
-      _selected_codes=list(dict.fromkeys(manual_codes+urgent_codes))
+      _priority=_eligible_priority_frame(st.session_state.db)
+      _min_cycle=_priority.cc.min() if not _priority.empty else -1
+      _priority_codes=set(_priority.loc[_priority.cc==_min_cycle,'codigo'].astype(str))
+      _urgent_codes=set(str(c) for c in urgent_codes)
+      _selected_codes=[c for c in dict.fromkeys(manual_codes+urgent_codes)
+                       if c in _priority_codes or c in _urgent_codes]
+      _busy_codes=_open_inventory_codes()
+      _selected_codes=[c for c in _selected_codes if c not in _busy_codes]
       sel=st.session_state.db[st.session_state.db.codigo.astype(str).isin(_selected_codes)].copy()
      else:
       sel=select_products(st.session_state.db,n,urgent_codes)
@@ -1274,7 +1313,7 @@ elif active=='Inventário Rotativo':
     if not divs: st.success('Não existem divergências na 1ª contagem. Todos os itens foram confirmados pelo sistema.')
     for r in divs:
      with st.container(border=True):
-      q=last(r);a,b,c,d=st.columns(4);a.markdown(f'**{r["codigo"]} / {r["endereco"]}**');b.metric('Sistema',fn(r['qtd_sistema']));c.metric('1ª contagem',fn(q));d.metric('Divergência',signed_brl(divergencia_valor(r,q)));st.caption(f'Divergência de quantidade: {diff(r,q):+,.3f}'.replace(',','X').replace('.',',').replace('X','.').replace('+','+')+f' · Classificação: {sev(abs(divergencia_valor(r,q)))} · Comentário: {r["contagens"][-1]["comentario"]}')
+      q=last(r);a,b,c,d=st.columns(4);a.markdown(f'**{r["codigo"]} / {r["endereco"]}**');a.caption(r.get('descricao',''));b.metric('Sistema',fn(r['qtd_sistema']));c.metric('1ª contagem',fn(q));d.metric('Divergência',signed_brl(divergencia_valor(r,q)));st.caption(f'Divergência de quantidade: {diff(r,q):+,.3f}'.replace(',','X').replace('.',',').replace('X','.').replace('+','+')+f' · Classificação: {sev(abs(divergencia_valor(r,q)))} · Comentário: {r["contagens"][-1]["comentario"]}')
       x,y=st.columns(2)
       if x.button('RECONTAR ESTE ITEM',key='r1_'+r['id'],use_container_width=True):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
       if y.button('AUDITAR ESTE ITEM',key='a1_'+r['id'],use_container_width=True):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
@@ -1309,7 +1348,7 @@ elif active=='Inventário Rotativo':
     for r in candidates:
      q2=last(r);q1=r['contagens'][-2]['quantidade'] if len(r['contagens'])>=2 else None
      with st.container(border=True):
-      st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(f'Sistema: **{fn(r["qtd_sistema"])}** · Anterior: **{fn(q1) if q1 is not None else "—"}** · Atual: **{fn(q2)}**')
+      st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.caption(r.get('descricao',''));st.write(f'Sistema: **{fn(r["qtd_sistema"])}** · Anterior: **{fn(q1) if q1 is not None else "—"}** · Atual: **{fn(q2)}**')
       if abs(q2-r['qtd_sistema'])<1e-9:
        st.success('Atual igual ao sistema: SISTEMA CONFIRMADO. Nenhuma nova contagem é necessária.');r['contagem_final']=q2;r['resultado_final']='SISTEMA CONFIRMADO';r['status']='FINALIZADO';persist_inv(inv)
       else:
