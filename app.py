@@ -697,6 +697,24 @@ def delete_open_inventory(documento):
   return False
 
 
+def confirm_adjustment(documento,item_id,realizado,observacao):
+ if _session_profile()!='Gestor':
+  st.error('SOMENTE O GESTOR PODE VALIDAR O AJUSTE.')
+  return False
+ try:
+  result=central_data.confirm_inventory_adjustment(
+   documento,item_id,realizado,observacao,_session_auth_token(),
+  )
+  updated=result.get('document')
+  if not isinstance(updated,dict):raise ValueError('RESPOSTA_SEM_DOCUMENTO')
+  st.session_state.inventories[str(documento)]=updated
+  save('inventories',st.session_state.inventories)
+  return True
+ except Exception as exc:
+  st.error(f'NÃO FOI POSSÍVEL REGISTRAR A VALIDAÇÃO: {exc}')
+  return False
+
+
 def addcount(r,q,cm,stage):
  stamp=now_local()
  r['contagens'].append({
@@ -1330,7 +1348,9 @@ elif active=='Inventário Rotativo':
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
     if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):
-     if close_inv(inv):st.rerun()
+     if close_inv(inv):
+       st.session_state.section='Registro' if any(r.get('ajuste_autorizado') for r in inv.get('rows',[])) else 'Inventário Rotativo'
+       st.rerun()
      else:st.error(st.session_state.get('_inventory_close_error') or 'Não foi possível encerrar o inventário. A operação foi revertida.')
    elif prof=='Operador' and inv['status']=='AGUARDANDO RECONTAGEM':
     st.markdown('#### Recontagem — itens liberados pelo gestor')
@@ -1372,7 +1392,9 @@ elif active=='Inventário Rotativo':
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
     if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):
-     if close_inv(inv):st.rerun()
+     if close_inv(inv):
+       st.session_state.section='Registro' if any(r.get('ajuste_autorizado') for r in inv.get('rows',[])) else 'Inventário Rotativo'
+       st.rerun()
      else:st.error('Não foi possível encerrar o inventário. A operação foi revertida.')
    elif prof=='Gestor' and inv['status']=='AGUARDANDO AUDITORIA':
     st.markdown('#### Auditoria / 3ª ou próxima contagem')
@@ -1456,6 +1478,7 @@ elif active=='Registro':
     'Data':inv['data'],
     'Responsável':inv['responsavel'],
     'Ciclo':inv['ciclo'],
+    'ID Interno':r.get('id',''),
     'Código':r['codigo'],
     'Descrição':r['descricao'],
     'Endereço':r['endereco'],
@@ -1467,6 +1490,10 @@ elif active=='Registro':
     'Tratativa':r.get('tratativa_divergencia',''),
     'Ajuste Necessário':_ajuste_necessario,
     'Ajuste Autorizado':'SIM' if r.get('ajuste_autorizado') else 'NÃO',
+    'Status Ajuste':r.get('ajuste_status') or ('PENDENTE' if r.get('ajuste_autorizado') else 'NÃO APLICÁVEL'),
+    'Ajuste Validado por':r.get('ajuste_validado_por',''),
+    'Ajuste Validado em':central_data.format_dt(r.get('ajuste_validado_em')) if r.get('ajuste_validado_em') else '',
+    'Observação Ajuste':r.get('ajuste_observacao',''),
     'Qtd. Ajuste':float(r.get('ajuste_qtd') or 0),
     'Ação Protheus':r.get('acao_protheus',''),
     'Autorizado por':r.get('ajuste_autorizado_por',''),
@@ -1475,13 +1502,34 @@ elif active=='Registro':
    })
  if rows:
   df=pd.DataFrame(rows)
-  display_df=df.copy()
+  display_df=df.drop(columns=['ID Interno']).copy()
   display_df['Valor Divergência']=display_df['Valor Divergência'].map(signed_brl)
   st.dataframe(display_df,use_container_width=True,hide_index=True)
   export_df=display_df.copy()
   c1,c2,c3=st.columns(3)
   c1.download_button('Exportar Registro em Excel',excel_bytes(export_df,'Registro'),'registro_inventarios.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',use_container_width=True)
-  ajustes=df[df['Ajuste Autorizado'].eq('SIM')].copy()
+  ajustes=df[df['Ajuste Autorizado'].eq('SIM') & df['Status Ajuste'].ne('REALIZADO')].copy()
+  topic_divider()
+  section_band('02 · PROTHEUS','AJUSTES PENDENTES DE CONFIRMAÇÃO')
+  if not ajustes.empty:
+   pendentes=ajustes[['Documento','Código','Descrição','Endereço','Ajuste Necessário','Ação Protheus','Status Ajuste']].copy()
+   st.dataframe(pendentes,use_container_width=True,hide_index=True)
+   if _session_profile()=='Gestor':
+    opcoes={
+     f"{row['Documento']} · {row['Código']} · {row['Endereço']} · {row['Descrição']}":(row['Documento'],row['ID Interno'])
+     for _,row in ajustes.iterrows()
+    }
+    with st.form('confirmacao_ajuste_protheus',clear_on_submit=True):
+     alvo=st.selectbox('ITEM PARA VALIDAR',list(opcoes.keys()))
+     realizado=st.radio('O AJUSTE FOI EFETIVAMENTE REALIZADO NO PROTHEUS?',['NÃO','SIM'],horizontal=True)
+     observacao=st.text_input('REFERÊNCIA DO LANÇAMENTO / OBSERVAÇÃO',placeholder='Nº do movimento ou motivo da pendência')
+     salvar=st.form_submit_button('REGISTRAR VALIDAÇÃO',type='primary',use_container_width=True)
+    if salvar:
+     documento,item_id=opcoes[alvo]
+     if realizado=='SIM' and not observacao.strip():
+      st.error('INFORME A REFERÊNCIA DO LANÇAMENTO ANTES DE CONFIRMAR.')
+     elif confirm_adjustment(documento,item_id,realizado=='SIM',observacao):
+      st.rerun()
   if not ajustes.empty:
    carga=ajustes[[
     'Documento','Código','Descrição','Endereço','Qtd. Sistema','Contagem Final',
@@ -1507,7 +1555,7 @@ elif active=='Registro':
    _csv=carga.to_csv(index=False,sep=';',decimal=',').encode('utf-8-sig')
    c3.download_button('Ajustes Protheus · CSV',_csv,'ajustes_protheus.csv','text/csv',use_container_width=True)
   else:
-   c2.caption('Nenhum ajuste autorizado para exportação.')
+   c2.caption('Nenhum ajuste pendente para exportação.')
  else:st.info('Nenhum inventário fechado.')
 
 # Reportar Inconsistências
