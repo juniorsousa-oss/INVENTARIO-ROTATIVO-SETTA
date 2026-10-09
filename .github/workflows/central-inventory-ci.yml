@@ -9,7 +9,7 @@ on:
       - 'setta_shell.py'
       - 'setta_auth.py'
       - '.streamlit/config.toml'
-      - 'scripts/validate_base.py'
+      - 'scripts/**'
       - 'requirements.txt'
       - 'supabase/migrations/**'
       - '.gitignore'
@@ -31,6 +31,8 @@ jobs:
         run: python -m py_compile app.py central_inventory_data.py setta_shell.py setta_auth.py scripts/validate_base.py
       - name: Validar baseline
         run: python scripts/validate_base.py
+      - name: Testar prioridade de contagens
+        run: python scripts/test_cycle_priority.py
       - name: Validar integração
         run: |
           python - <<'PY'
