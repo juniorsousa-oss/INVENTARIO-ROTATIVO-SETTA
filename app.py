@@ -1528,28 +1528,30 @@ elif active=='Registro':
   export_df=display_df.copy()
   c1,c2,c3=st.columns(3)
   c1.download_button('Exportar Registro em Excel',excel_bytes(export_df,'Registro'),'registro_inventarios.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',use_container_width=True)
-  ajustes=df[df['Ajuste Autorizado'].eq('SIM') & df['Status Ajuste'].ne('REALIZADO')].copy()
+  ajustes=df[df['Ajuste Autorizado'].eq('SIM') & df['Status Ajuste'].eq('PENDENTE')].copy()
+  nao_realizados=df[df['Ajuste Autorizado'].eq('SIM') & df['Status Ajuste'].eq('NAO_REALIZADO')].copy()
+  validacoes=pd.concat([ajustes,nao_realizados],ignore_index=True)
   topic_divider()
   section_band('02 · PROTHEUS','AJUSTES PENDENTES DE CONFIRMAÇÃO')
   if not ajustes.empty:
    pendentes=ajustes[['Documento','Código','Descrição','Endereço','Ajuste Necessário','Ação Protheus','Status Ajuste']].copy()
    st.dataframe(pendentes,use_container_width=True,hide_index=True)
-   if _session_profile()=='Gestor':
-    opcoes={
-     f"{row['Documento']} · {row['Código']} · {row['Endereço']} · {row['Descrição']}":(row['Documento'],row['ID Interno'])
-     for _,row in ajustes.iterrows()
-    }
-    with st.form('confirmacao_ajuste_protheus',clear_on_submit=True):
-     alvo=st.selectbox('ITEM PARA VALIDAR',list(opcoes.keys()))
-     realizado=st.radio('O AJUSTE FOI EFETIVAMENTE REALIZADO NO PROTHEUS?',['NÃO','SIM'],horizontal=True)
-     observacao=st.text_input('REFERÊNCIA DO LANÇAMENTO / OBSERVAÇÃO',placeholder='Nº do movimento ou motivo da pendência')
-     salvar=st.form_submit_button('REGISTRAR VALIDAÇÃO',type='primary',use_container_width=True)
-    if salvar:
-     documento,item_id=opcoes[alvo]
-     if realizado=='SIM' and not observacao.strip():
-      st.error('INFORME A REFERÊNCIA DO LANÇAMENTO ANTES DE CONFIRMAR.')
-     elif confirm_adjustment(documento,item_id,realizado=='SIM',observacao):
-      st.rerun()
+  if _session_profile()=='Gestor' and not validacoes.empty:
+   opcoes={
+    f"{row['Documento']} · {row['Código']} · {row['Endereço']} · {row['Descrição']} · {row['Status Ajuste']}":(row['Documento'],row['ID Interno'])
+    for _,row in validacoes.iterrows()
+   }
+   with st.form('confirmacao_ajuste_protheus',clear_on_submit=True):
+    alvo=st.selectbox('ITEM PARA VALIDAR',list(opcoes.keys()))
+    realizado=st.radio('O AJUSTE FOI EFETIVAMENTE REALIZADO NO PROTHEUS?',['NÃO','SIM'],horizontal=True)
+    observacao=st.text_input('REFERÊNCIA DO LANÇAMENTO / OBSERVAÇÃO',placeholder='Nº do movimento ou motivo da pendência')
+    salvar=st.form_submit_button('REGISTRAR VALIDAÇÃO',type='primary',use_container_width=True)
+   if salvar:
+    documento,item_id=opcoes[alvo]
+    if realizado=='SIM' and not observacao.strip():
+     st.error('INFORME A REFERÊNCIA DO LANÇAMENTO ANTES DE CONFIRMAR.')
+    elif confirm_adjustment(documento,item_id,realizado=='SIM',observacao):
+     st.rerun()
   if not ajustes.empty:
    carga=ajustes[[
     'Documento','Código','Descrição','Endereço','Qtd. Sistema','Contagem Final',
