@@ -140,6 +140,57 @@ def save_inventory_report(report_id: str, report: dict) -> dict:
     ).get("data") or {}
 
 
+def list_production_returns(auth_token: str) -> list[dict]:
+    data = api_call(
+        "inventory_return_list",
+        {"auth_token": str(auth_token or "").strip()},
+        timeout=30,
+    ).get("data") or {}
+    return data.get("rows") or []
+
+
+def create_production_return(
+    codigo: str,
+    descricao: str,
+    quantidade: float,
+    psy: str,
+    observacao: str,
+    auth_token: str,
+) -> dict:
+    return api_call(
+        "inventory_return_create",
+        {
+            "codigo": codigo,
+            "descricao": descricao,
+            "quantidade": float(quantidade),
+            "psy": psy,
+            "observacao": observacao,
+            "auth_token": str(auth_token or "").strip(),
+        },
+        timeout=45,
+    ).get("data") or {}
+
+
+def transition_production_return(
+    return_id: str,
+    status: str,
+    observacao: str,
+    referencia_protheus: str,
+    auth_token: str,
+) -> dict:
+    return api_call(
+        "inventory_return_transition",
+        {
+            "id": return_id,
+            "status": status,
+            "observacao": observacao,
+            "referencia_protheus": referencia_protheus,
+            "auth_token": str(auth_token or "").strip(),
+        },
+        timeout=45,
+    ).get("data") or {}
+
+
 def confirm_inventory_adjustment(
     documento: str,
     item_id: str,
