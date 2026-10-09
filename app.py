@@ -261,7 +261,8 @@ def _session_operator():
 def _session_profile():
  user=_auth_user()
  role=str((user or {}).get('role') or '').strip().lower()
- return 'Produção' if role=='producao' else 'Gestor' if role in {'admin','gestor'} else 'Operador'
+ return ('Produção' if role=='producao' else 'Almoxarifado' if role=='almoxarifado' else
+         'Gestor' if role in {'admin','gestor'} else 'Operador')
 
 def _session_auth_token():
  user=_auth_user()
@@ -1680,6 +1681,8 @@ elif active=='Retornos de Produção':
     if _authenticate_user(_login,_password):st.rerun()
     else:st.error('USUÁRIO OU SENHA INVÁLIDOS.')
    except Exception as exc:st.error(f'ERRO NA AUTENTICAÇÃO: {exc}')
+ elif _session_profile() not in {'Produção','Almoxarifado','Gestor'}:
+  st.warning('ACESSO AOS RETORNOS RESTRITO A USUÁRIOS AUTORIZADOS DA PRODUÇÃO OU ALMOXARIFADO.')
  else:
   role=_session_profile()
   try:
