@@ -140,6 +140,15 @@ def save_inventory_report(report_id: str, report: dict) -> dict:
     ).get("data") or {}
 
 
+def forward_inventory_problem_to_delivery(report_id: str, auth_token: str) -> dict:
+    """Encaminha uma inconsistência persistida para o projeto/material no app Entregas."""
+    return api_call(
+        "inventory_problem_to_delivery",
+        {"report_id": str(report_id), "auth_token": str(auth_token or "").strip()},
+        timeout=45,
+    ).get("data") or {}
+
+
 def list_production_returns(auth_token: str) -> list[dict]:
     data = api_call(
         "inventory_return_list",
