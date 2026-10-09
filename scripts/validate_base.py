@@ -46,6 +46,7 @@ expected_pages = [
     "Banco de Dados",
     "Registro",
     "Reportar Inconsistências",
+    "Retornos de Produção",
     "Configurações",
 ]
 match = re.search(r"_INV_NAV_PAGES\s*=\s*\[(.*?)\]", app, re.S)
@@ -327,6 +328,43 @@ if re.search(
     shell, re.S
 ):
     fail("Menu lateral voltou à altura fixa da tela.")
+
+# Novos fluxos devem manter as permissões, a prioridade rotativa e as APIs.
+for token in [
+    "def _eligible_priority_frame(",
+    "def select_products(",
+    "if len(selected)>=int(n):break",
+    "if _session_profile()=='Produção'",
+    "def _visible_inventory_pages(",
+    "return ['Retornos de Produção']",
+    "elif active=='Retornos de Produção':",
+    "confirm_inventory_adjustment(",
+    "Status Ajuste",
+    "forward_problem_to_delivery(",
+    "'psy':psy",
+    "list_production_returns(",
+    "transition_production_return(",
+]:
+    if token not in app:
+        fail(f"Fluxo operacional ou controle de acesso ausente: {token}")
+
+for token in [
+    "inventory_adjustment_confirm",
+    "inventory_problem_to_delivery",
+    "inventory_return_create",
+    "inventory_return_transition",
+    "inventory_return_list",
+]:
+    if token not in central:
+        fail(f"API central ausente: {token}")
+
+for migration_name in [
+    "20261009_inventory_adjustment_confirmation.sql",
+    "20261009_production_returns.sql",
+    "20261009_inventory_delivery_bridge.sql",
+]:
+    if not (ROOT / "supabase/migrations" / migration_name).exists():
+        fail(f"Migration ausente: {migration_name}")
 
 build = re.search(r"BUILD_DIAGNOSTICO\s*=\s*'([^']+)'", app)
 if not build:
