@@ -1116,6 +1116,17 @@ st.markdown('<p class="app-sub">INVENTÁRIO ROTATIVO • ACURÁCIA • CONTAGENS
 
 _render_setta_auth_gate()
 
+# Ao abrir/recarregar o navegador, a sessão sempre consulta as versões
+# oficiais antes de reutilizar qualquer cache compartilhado de metadados.
+# Cliques dos controles não geram novo processamento de base.
+if not st.session_state.get("_inventory_sources_checked_on_page_load"):
+ try:
+  central_data.bundle_state.clear()
+  central_data.sync_state.clear()
+ except Exception:
+  pass
+ st.session_state["_inventory_sources_checked_on_page_load"]=True
+
 sync_central_inventory(force=False)
 
 _sidebar_bundle=st.session_state.get('_central_inventory_bundle') or {}
