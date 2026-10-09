@@ -697,6 +697,20 @@ def delete_open_inventory(documento):
   return False
 
 
+def forward_problem_to_delivery(report_id):
+ try:
+  result=central_data.forward_inventory_problem_to_delivery(report_id,_session_auth_token())
+  updated=result.get('report')
+  if isinstance(updated,dict):
+   st.session_state.reports[str(report_id)]=updated
+   save('reports',st.session_state.reports)
+  st.session_state.pop('_inventory_delivery_sync_error',None)
+  return True
+ except Exception as exc:
+  st.session_state['_inventory_delivery_sync_error']=str(exc)
+  return False
+
+
 def confirm_adjustment(documento,item_id,realizado,observacao):
  if _session_profile()!='Gestor':
   st.error('SOMENTE O GESTOR PODE VALIDAR O AJUSTE.')
@@ -1585,13 +1599,15 @@ elif active=='Reportar Inconsistências':
      if not m.empty:descricao=str(m.iloc[0]['descricao'])
     st.caption(f'Descrição: {descricao}' if descricao else 'Selecione o código do material.')
     endereco=st.selectbox('Endereço',options=['']+addresses,index=0,help='Digite para pesquisar entre os endereços habilitados no Banco de Dados.')
+    psy=st.text_input('PSY / PROJETO DA INCONSISTÊNCIA',placeholder='Informe os 11 dígitos da PSY para vincular à Gestão de Entregas')
     obs=st.text_area('OBSERVAÇÃO OBRIGATÓRIA',placeholder='INFORME O QUE ACONTECEU...',height=130)
     st.caption('A observação será registrada automaticamente em CAIXA ALTA.')
     x,y=st.columns(2)
     if x.button('SALVAR INCONSISTÊNCIA',type='primary',use_container_width=True):
      obs=obs.strip().upper()
-     if not codigo or not endereco or not obs:
-      st.error('Código, endereço e observação são obrigatórios.')
+     psy=psy.strip()
+     if not codigo or not endereco or not obs or not (len(psy)==11 and psy.isdigit()):
+      st.error('Código, endereço, observação e PSY com 11 dígitos são obrigatórios.')
      else:
       stamp=now_local()
       rid=stamp.strftime('%Y%m%d%H%M%S')+'-'+uuid.uuid4().hex[:6].upper()
@@ -1604,6 +1620,7 @@ elif active=='Reportar Inconsistências':
        'codigo':str(codigo),
        'descricao':descricao,
        'endereco':str(endereco),
+       'psy':psy,
        'observacao':obs,
        'status':'ABERTO',
        'inventario_doc':None,
@@ -1611,11 +1628,13 @@ elif active=='Reportar Inconsistências':
       }
       if persist_report(report):
        st.session_state.new_report=False
-       st.success(f'Inconsistência {rid} registrada.')
+       forward_problem_to_delivery(rid)
        st.rerun()
       else:
        st.error('Não foi possível registrar a inconsistência.')
     if y.button('CANCELAR',use_container_width=True):st.session_state.new_report=False;st.rerun()
+  if st.session_state.get('_inventory_delivery_sync_error'):
+   st.warning('INCONSISTÊNCIA REGISTRADA, MAS O ENCAMINHAMENTO A ENTREGAS AINDA ESTÁ PENDENTE: '+str(st.session_state['_inventory_delivery_sync_error']))
   reports=sorted(st.session_state.reports.values(),key=lambda x:x.get('criado_em',''),reverse=True)
   abertos=[r for r in reports if r.get('status')=='ABERTO'];encerrados=[r for r in reports if r.get('status')=='ENCERRADO']
   st.divider();st.markdown('### Chamados')
@@ -1628,6 +1647,15 @@ elif active=='Reportar Inconsistências':
      st.caption(f'Criado em {r["criado_em"]} · Equipe: {r["equipe"]}')
      st.write(f'**OBSERVAÇÃO:** {r["observacao"]}')
      st.warning('PENDENTE — será incluído no próximo Inventário Rotativo.')
+     if r.get('delivery_sync_at'):
+      st.success(f"ENCAMINHADO A ENTREGAS · PSY {r.get('psy') or '—'}")
+     elif r.get('psy'):
+      st.warning('ENCAMINHAMENTO À GESTÃO DE ENTREGAS PENDENTE.')
+      if _auth_user() and st.button('TENTAR ENCAMINHAR PARA ENTREGAS',key='delivery_report_'+str(r['id'])):
+       if forward_problem_to_delivery(r['id']):st.rerun()
+       else:st.rerun()
+     else:
+      st.caption('REGISTRO ANTIGO SEM PSY: NÃO FOI ENCAMINHADO A ENTREGAS.')
   with te:
    if not encerrados:st.info('Nenhuma inconsistência encerrada.')
    for r in encerrados:
