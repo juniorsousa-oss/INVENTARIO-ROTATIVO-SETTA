@@ -140,6 +140,27 @@ def save_inventory_report(report_id: str, report: dict) -> dict:
     ).get("data") or {}
 
 
+def confirm_inventory_adjustment(
+    documento: str,
+    item_id: str,
+    realizado: bool,
+    observacao: str,
+    auth_token: str,
+) -> dict:
+    """Atualiza um único item do documento fechado sem substituir o inventário todo."""
+    return api_call(
+        "inventory_adjustment_confirm",
+        {
+            "documento": str(documento),
+            "item_id": str(item_id),
+            "realizado": bool(realizado),
+            "observacao": str(observacao or ""),
+            "auth_token": str(auth_token or "").strip(),
+        },
+        timeout=45,
+    ).get("data") or {}
+
+
 def delete_inventory_document(documento: str, auth_token: str) -> dict:
     """Exclui um inventário aberto de maneira transacional e autorizada."""
     return api_call(
