@@ -4,6 +4,28 @@ from zoneinfo import ZoneInfo
 from PIL import Image
 import pandas as pd
 import streamlit as st
+
+# Padrão SETTA: tabelas responsivas ao total de registros exibidos nos filtros.
+def _setta_table_height(data, requested=None):
+    try:
+        rows = len(data)
+    except (TypeError, ValueError):
+        return requested
+    limit = requested if isinstance(requested, int) and requested > 0 else 600
+    return min(limit, max(84, 42 + 35 * (min(rows, 100) + 1)))
+
+
+def _setta_dataframe(data, *args, **kwargs):
+    kwargs["height"] = _setta_table_height(data, kwargs.get("height"))
+    return st.dataframe(data, *args, **kwargs)
+
+
+def _setta_data_editor(data, *args, **kwargs):
+    if kwargs.get("num_rows") != "dynamic":
+        kwargs["height"] = _setta_table_height(data, kwargs.get("height"))
+    return st.data_editor(data, *args, **kwargs)
+
+
 import firebase_admin
 from firebase_admin import credentials, firestore
 import central_inventory_data as central_data
@@ -1485,7 +1507,7 @@ elif active=='Banco de Dados':
    _view=_view.rename(columns=_rename)
    for _col in ['SALDO EM ESTOQUE','SALDO NÃO DISPONÍVEL','SALDO DISPONÍVEL']:
     if _col in _view.columns:_view[_col]=pd.to_numeric(_view[_col],errors='coerce').fillna(0).map(fn)
-   st.dataframe(_view,use_container_width=True,hide_index=True,height=560)
+   _setta_dataframe(_view,use_container_width=True,hide_index=True,height=560)
    st.caption('REGRA DE DISPONIBILIDADE IDÊNTICA AO RELATÓRIO ESTOQUE TRATADO. NÃO HÁ EDIÇÃO, IMPORTAÇÃO OU SELEÇÃO MANUAL NESTA TELA.')
  except Exception as exc:
   st.warning(f'Não foi possível consultar o ESTOQUE TRATADO na Central: {exc}')
@@ -1530,7 +1552,7 @@ elif active=='Registro':
   df=pd.DataFrame(rows)
   display_df=df.drop(columns=['ID Interno']).copy()
   display_df['Valor Divergência']=display_df['Valor Divergência'].map(signed_brl)
-  st.dataframe(display_df,use_container_width=True,hide_index=True)
+  _setta_dataframe(display_df,use_container_width=True,hide_index=True)
   export_df=display_df.copy()
   c1,c2,c3=st.columns(3)
   c1.download_button('Exportar Registro em Excel',excel_bytes(export_df,'Registro'),'registro_inventarios.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',use_container_width=True)
@@ -1580,7 +1602,7 @@ elif active=='Registro':
     'Documento','Código','Descrição','Endereço',
     'Ajuste Necessário','Ação Protheus','Status Ajuste'
    ]].copy()
-   st.dataframe(pendentes,use_container_width=True,hide_index=True)
+   _setta_dataframe(pendentes,use_container_width=True,hide_index=True)
   else:
    st.success('NENHUM AJUSTE PENDENTE DE CONFIRMAÇÃO.')
   if not ajustes.empty:
@@ -1810,7 +1832,7 @@ elif active=='Retornos de Produção':
    _report['QUANTIDADE']=pd.to_numeric(_report['QUANTIDADE'],errors='coerce').fillna(0)
    for _dc in ['SOLICITADO EM','RECEBIDO EM','CONCLUÍDO EM']:
     _report[_dc]=_report[_dc].map(lambda v:central_data.format_dt(v) if v else '')
-   st.dataframe(_report,use_container_width=True,hide_index=True)
+   _setta_dataframe(_report,use_container_width=True,hide_index=True)
    st.download_button(
     'EXPORTAR REGISTROS EM EXCEL',excel_bytes(_report,'Retornos de Producao'),
     file_name='retornos_producao_setta.xlsx',
