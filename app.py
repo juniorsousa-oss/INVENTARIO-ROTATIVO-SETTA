@@ -261,7 +261,7 @@ def _session_operator():
 def _session_profile():
  user=_auth_user()
  role=str((user or {}).get('role') or '').strip().lower()
- return 'Gestor' if role in {'admin','gestor'} else 'Operador'
+ return 'Produção' if role=='producao' else 'Gestor' if role in {'admin','gestor'} else 'Operador'
 
 def _session_auth_token():
  user=_auth_user()
@@ -967,17 +967,21 @@ def render_api_monitor():
 
 
 # Sidebar — espelho estrutural do Controle de NFs
-_INV_NAV_PAGES=['Dashboard','Inventário Rotativo','Banco de Dados','Registro','Reportar Inconsistências','Configurações']
+_INV_NAV_PAGES=['Dashboard','Inventário Rotativo','Banco de Dados','Registro','Reportar Inconsistências','Retornos de Produção','Configurações']
+
+def _visible_inventory_pages():
+ return ['Retornos de Produção'] if _session_profile()=='Produção' else _INV_NAV_PAGES
+
 
 def _set_inventory_page(target):
- if target in _INV_NAV_PAGES:
+ if target in _visible_inventory_pages():
   st.session_state.section=target
   _setta_close_sidebar()
 
 def _current_inventory_page():
  value=str(st.session_state.get('section') or 'Dashboard')
- if value not in _INV_NAV_PAGES:
-  value='Dashboard'
+ if value not in _visible_inventory_pages():
+  value='Retornos de Produção' if _session_profile()=='Produção' else 'Dashboard'
   st.session_state.section=value
  return value
 
@@ -992,7 +996,7 @@ with st.sidebar:
  )
 
  _current=_current_inventory_page()
- for _nav_index,_nav_page in enumerate(_INV_NAV_PAGES):
+ for _nav_index,_nav_page in enumerate(_visible_inventory_pages()):
   st.button(
    str(_nav_page).upper(),
    key=f'setta_nav_{_nav_index}',
@@ -1092,7 +1096,7 @@ _sidebar_status_slot.markdown(
  unsafe_allow_html=True,
 )
 
-active=st.session_state.section
+active=_current_inventory_page()
 
 # Dashboard
 if active=='Dashboard':
@@ -1632,6 +1636,123 @@ elif active=='Reportar Inconsistências':
      st.caption(f'Criado em {r["criado_em"]} · Encerrado em {r.get("encerrado_em") or "—"} · Equipe: {r["equipe"]}')
      st.write(f'**OBSERVAÇÃO:** {r["observacao"]}')
      st.success(f'TRATADO NO INVENTÁRIO: {r.get("inventario_doc") or "—"}')
+
+# Produção -> Almoxarifado -> Protheus. Operadores da produção enxergam somente esta tela.
+elif active=='Retornos de Produção':
+ section_band('01 · RETORNOS','DEVOLUÇÕES DA PRODUÇÃO')
+ if not _auth_user():
+  st.info('IDENTIFIQUE-SE COM O SEU USUÁRIO SETTA PARA UTILIZAR OS RETORNOS.')
+  with st.form('return_login_form'):
+   _login=st.text_input('USUÁRIO / E-MAIL')
+   _password=st.text_input('SENHA',type='password')
+   _submit=st.form_submit_button('ENTRAR',type='primary',use_container_width=True)
+  if _submit:
+   try:
+    if _authenticate_user(_login,_password):st.rerun()
+    else:st.error('USUÁRIO OU SENHA INVÁLIDOS.')
+   except Exception as exc:st.error(f'ERRO NA AUTENTICAÇÃO: {exc}')
+ else:
+  role=_session_profile()
+  try:
+   returns=central_data.list_production_returns(_session_auth_token())
+  except Exception as exc:
+   st.error(f'NÃO FOI POSSÍVEL CONSULTAR OS RETORNOS: {exc}')
+   returns=[]
+  _pending=sum(1 for item in returns if item.get('status')=='PENDENTE')
+  _received=sum(1 for item in returns if item.get('status')=='RECEBIDO')
+  _closed=sum(1 for item in returns if item.get('status') in ('CONCLUIDO','RECUSADO'))
+  _k1,_k2,_k3=st.columns(3)
+  _k1.metric('PENDENTES DE RECEBIMENTO',_pending)
+  _k2.metric('RECEBIDOS · AGUARDANDO CONCLUSÃO',_received)
+  _k3.metric('CONCLUÍDOS / RECUSADOS',_closed)
+  if role=='Produção':
+   section_band('02 · SOLICITAR','INFORMAR DEVOLUÇÃO')
+   db=st.session_state.db
+   if db is None or db.empty:
+    st.warning('A BASE DE MATERIAIS AINDA NÃO ESTÁ DISPONÍVEL.')
+   else:
+    _materials=db[['codigo','descricao']].drop_duplicates('codigo').copy()
+    _materials=_materials.sort_values('codigo')
+    _choices={
+     f"{row.codigo} — {row.descricao}":(str(row.codigo),str(row.descricao))
+     for _,row in _materials.iterrows()
+    }
+    with st.form('production_return_create_form',clear_on_submit=True):
+     _picked=st.selectbox('MATERIAL',list(_choices.keys()),index=None,placeholder='Pesquise pelo código ou descrição')
+     _q=st.number_input('QUANTIDADE',min_value=0.001,value=1.0,step=1.0,format='%.3f')
+     _psy=st.text_input('PSY / PROJETO',placeholder='Informe a PSY vinculada à devolução')
+     _obs=st.text_area('OBSERVAÇÃO DA DEVOLUÇÃO',height=90)
+     _create=st.form_submit_button('REGISTRAR DEVOLUÇÃO',type='primary',use_container_width=True)
+    if _create:
+     if not _picked or not _psy.strip():
+      st.error('MATERIAL, QUANTIDADE E PSY SÃO OBRIGATÓRIOS.')
+     else:
+      codigo,descricao=_choices[_picked]
+      try:
+       central_data.create_production_return(
+        codigo,descricao,_q,_psy.strip().upper(),_obs.strip(),_session_auth_token(),
+       )
+       st.success('DEVOLUÇÃO REGISTRADA. AGUARDANDO RECEBIMENTO DO ALMOXARIFADO.')
+       st.rerun()
+      except Exception as exc:st.error(f'ERRO AO SOLICITAR DEVOLUÇÃO: {exc}')
+  else:
+   section_band('02 · CONFERÊNCIA','VALIDAR DEVOLUÇÕES NO ALMOXARIFADO')
+   _waiting=[x for x in returns if x.get('status') in ('PENDENTE','RECEBIDO')]
+   if not _waiting:
+    st.success('NENHUMA DEVOLUÇÃO PENDENTE.')
+   else:
+    _options={
+     f"{x.get('id','')[:8]} · {x.get('codigo','')} · {x.get('psy','')} · {x.get('status','')}":x
+     for x in _waiting
+    }
+    with st.form('production_return_transition_form',clear_on_submit=True):
+     _selected=st.selectbox('DEVOLUÇÃO PARA CONFERÊNCIA',list(_options.keys()))
+     _item=_options[_selected]
+     st.write(f"**{_item.get('descricao','')}** · Quantidade: **{fn(_item.get('quantidade') or 0)}** · PSY: **{_item.get('psy','')}**")
+     if _item.get('observacao_producao'):
+      st.caption('PRODUÇÃO: '+str(_item.get('observacao_producao')))
+     _actions=['RECEBIDO','RECUSADO'] if _item.get('status')=='PENDENTE' else ['CONCLUIDO']
+     _status=st.radio('VALIDAÇÃO',_actions,horizontal=True)
+     _ref=st.text_input('REFERÊNCIA DO LANÇAMENTO PROTHEUS',placeholder='Obrigatório para concluir a devolução')
+     _note=st.text_area('OBSERVAÇÃO DO ALMOXARIFADO',height=80)
+     _save=st.form_submit_button('CONFIRMAR VALIDAÇÃO',type='primary',use_container_width=True)
+    if _save:
+     if _status=='CONCLUIDO' and not _ref.strip():st.error('INFORME A REFERÊNCIA DO LANÇAMENTO NO PROTHEUS.')
+     elif _status=='RECUSADO' and not _note.strip():st.error('INFORME O MOTIVO DA RECUSA.')
+     else:
+      try:
+       central_data.transition_production_return(
+        str(_item['id']),_status,_note.strip(),_ref.strip(),_session_auth_token(),
+       )
+       st.success('VALIDAÇÃO REGISTRADA COM SUCESSO.')
+       st.rerun()
+      except Exception as exc:st.error(f'NÃO FOI POSSÍVEL VALIDAR A DEVOLUÇÃO: {exc}')
+  topic_divider()
+  section_band('03 · REGISTROS','RELATÓRIO DE DEVOLUÇÕES')
+  if returns:
+   _cols=['id','codigo','descricao','quantidade','psy','status','criado_por','criado_em',
+          'recebido_por','recebido_em','concluido_por','concluido_em',
+          'referencia_protheus','observacao_producao','observacao_almox']
+   _report=pd.DataFrame(returns).reindex(columns=_cols).fillna('')
+   _report=_report.rename(columns={
+    'id':'ID','codigo':'CÓDIGO','descricao':'DESCRIÇÃO','quantidade':'QUANTIDADE',
+    'psy':'PSY','status':'STATUS','criado_por':'SOLICITANTE','criado_em':'SOLICITADO EM',
+    'recebido_por':'RECEBIDO POR','recebido_em':'RECEBIDO EM',
+    'concluido_por':'CONCLUÍDO POR','concluido_em':'CONCLUÍDO EM',
+    'referencia_protheus':'REF. PROTHEUS','observacao_producao':'OBS. PRODUÇÃO',
+    'observacao_almox':'OBS. ALMOXARIFADO',
+   })
+   _report['QUANTIDADE']=pd.to_numeric(_report['QUANTIDADE'],errors='coerce').fillna(0)
+   for _dc in ['SOLICITADO EM','RECEBIDO EM','CONCLUÍDO EM']:
+    _report[_dc]=_report[_dc].map(lambda v:central_data.format_dt(v) if v else '')
+   st.dataframe(_report,use_container_width=True,hide_index=True)
+   st.download_button(
+    'EXPORTAR REGISTROS EM EXCEL',excel_bytes(_report,'Retornos de Producao'),
+    file_name='retornos_producao_setta.xlsx',
+    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    use_container_width=True,
+   )
+  else:st.info('AINDA NÃO EXISTEM DEVOLUÇÕES REGISTRADAS.')
 
 # User administration
 # Settings
