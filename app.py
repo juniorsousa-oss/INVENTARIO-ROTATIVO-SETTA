@@ -552,9 +552,10 @@ def cycle():
 def select_products(db,n,urgent_codes=None):
  """Menor número de ciclos primeiro; urgências podem antecipar a fila."""
  available=_eligible_priority_frame(db)
- if available.empty:return available.drop(columns=['cc'],errors='ignore')
- codes=set(available.codigo.astype(str))
- urgent=[str(c) for c in dict.fromkeys(urgent_codes or []) if str(c) in codes]
+ # A constatação de inconsistência tem prioridade mesmo com saldo de sistema zero.
+ codes=set(db.codigo.astype(str))
+ busy=_open_inventory_codes()
+ urgent=[str(c) for c in dict.fromkeys(urgent_codes or []) if str(c) in codes and str(c) not in busy]
  ordinary=available[~available.codigo.astype(str).isin(urgent)].copy()
  selected=[]
  # Alterna o ranking unitário e o ranking de valor total em cada faixa de ciclos.
