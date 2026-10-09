@@ -39,6 +39,11 @@ urgency_result = selected(2, ["00000005"])
 assert "00000005" in urgency_result, "Constatação de inconsistência deve antecipar o item"
 assert {"00000001", "00000002"} <= urgency_result, "Urgência não pode consumir vagas regulares"
 
+# Uma inconsistência urgente deve entrar mesmo quando o sistema indica saldo zero.
+db.at[4, "saldo_apto"] = 0
+assert "00000005" in selected(2, ["00000005"]), "Inconsistência com saldo zero deve ser contabilizada"
+db.at[4, "saldo_apto"] = 5
+
 mock_state.inventories = {
     "in-progress": {"status": "EM CONTAGEM", "rows": [{"codigo": "00000001"}]},
 }
