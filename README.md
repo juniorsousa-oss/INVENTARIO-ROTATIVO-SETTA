@@ -92,13 +92,23 @@ Contagens, inventários e inconsistências novos registram usuário/perfil quand
 
 ## Relatórios de contagens e Protheus
 
-O menu **Registro** atualiza os inventários a partir do Supabase ao entrar
-na tela, repete a atualização a cada 30 segundos durante a navegação
-e oferece o botão **Atualizar contagens agora**.
+O menu **Registro** é organizado em três abas independentes:
 
-O relatório de **Contagens registradas** inclui itens que já receberam ao menos
-uma contagem, mesmo que o inventário ainda esteja em execução ou em análise.
-Ele é de conferência e **não** pode ser usado como carga de ajuste no ERP.
+- **Histórico de Inventários**: visão resumida dos documentos abertos e fechados,
+  com indicadores gerais, filtros por situação, período e documento. Os itens,
+  a sequência das contagens e as tratativas ficam em detalhes recolhíveis.
+  A exportação original de registros fechados continua disponível.
+- **Conferência de Contagens**: relatório dos itens que já receberam ao menos
+  uma contagem, inclusive inventários em andamento ou em análise. Possui filtros
+  por documento, situação, material e endereço, histórico completo recolhível e
+  exportação Excel dos dados filtrados. **Não é uma carga para o ERP.**
+- **Ajustes Protheus**: confirmação de execução, tabela de pendências e
+  exportações Excel/CSV exclusivamente dos ajustes autorizados e pendentes,
+  filtráveis por documento.
+
+A tela atualiza os inventários a partir do Supabase ao entrar, repete a
+sincronização a cada 30 segundos durante a navegação e oferece o botão
+**Atualizar contagens agora**.
 
 A carga **Ajustes Protheus** continua exclusiva de documentos FECHADOS com
 `ajuste_autorizado=true` e ajuste ainda não confirmado como REALIZADO.
