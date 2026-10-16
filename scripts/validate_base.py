@@ -286,8 +286,11 @@ for token in [
     "def delete_open_inventory(",
     "delete_inventory_document(doc,_session_auth_token())",
     "inventory_delete_confirmation",
+    "def _can_manage_inventory():",
+    "build_count_rows(st.session_state.inventories)",
+    "ATUALIZAR CONTAGENS AGORA",
     "CONFIRMAR EXCLUSÃO",
-    "if _session_profile()!='Gestor' or not inv or inv.get('status')=='FECHADO'",
+    "if not _can_manage_inventory() or not inv or inv.get('status')=='FECHADO'",
     "if x.get('status')=='FECHADO'",
 ]:
     if token not in app:
