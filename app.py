@@ -1578,9 +1578,9 @@ elif active=='Banco de Dados':
   st.warning(f'Não foi possível consultar o ESTOQUE TRATADO na Central: {exc}')
 
 
-# Register
+# Register — visão resumida e ações separadas por finalidade.
 elif active=='Registro':
- section_band('01 · REGISTRO','HISTÓRICO DE INVENTÁRIOS')
+ section_band('01 · REGISTRO','CONTROLE E HISTÓRICO DE INVENTÁRIOS')
  if st.button('ATUALIZAR CONTAGENS AGORA',key='refresh_registry_counts'):
   try:
    _refresh_inventory_documents()
@@ -1589,40 +1589,49 @@ elif active=='Registro':
   except Exception as exc:
    st.error('FALHA AO ATUALIZAR OS INVENTÁRIOS: '+str(exc))
 
- # Relatório de conferência: traz contagens novas mesmo antes da análise.
- # Estas linhas não são uma carga de ajuste autorizada ao Protheus.
- _count_records=build_count_rows(st.session_state.inventories)
- topic_divider()
- section_band('02 · CONFERÊNCIA','CONTAGENS REGISTRADAS','INCLUI INVENTÁRIOS ABERTOS E FECHADOS · NÃO É CARGA PARA O PROTHEUS')
- if _count_records:
-  _count_frame=pd.DataFrame(_count_records)
-  _setta_dataframe(_count_frame,use_container_width=True,hide_index=True)
-  st.download_button(
-   'Contagens registradas · Excel',
-   excel_bytes(_count_frame,'CONTAGENS'),
-   'conferencia_contagens_inventarios.xlsx',
-   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-   use_container_width=True,
-  )
- else:
-  st.info('NENHUMA CONTAGEM REGISTRADA NOS INVENTÁRIOS CONSULTADOS.')
+ # A situação de cada inventário é preservada; a consulta não altera dados.
+ _registry_docs=sorted(
+  [v for v in st.session_state.inventories.values() if isinstance(v,dict) and v.get('documento')],
+  key=lambda v:str(v.get('criado_em') or v.get('documento') or ''),reverse=True,
+ )
+ _registry_by_doc={str(v['documento']):v for v in _registry_docs}
+ _registry_closed=sum(x.get('status')=='FECHADO' for x in _registry_docs)
+ _registry_pending=len(_registry_docs)-_registry_closed
+ _registry_c1,_registry_c2,_registry_c3=st.columns(3)
+ _registry_c1.metric('DOCUMENTOS',len(_registry_docs))
+ _registry_c2.metric('FECHADOS',_registry_closed)
+ _registry_c3.metric('EM ABERTO',_registry_pending)
+
+ def _registry_day(inv):
+  iso=str(inv.get('criado_em') or '').strip()
+  if iso:
+   try:return datetime.fromisoformat(iso.replace('Z','+00:00')).date()
+   except ValueError:pass
+  raw=str(inv.get('data') or '').strip()
+  for mask in ('%d/%m/%Y %H:%M','%d/%m/%Y %H:%M:%S','%d/%m/%Y'):
+   try:return datetime.strptime(raw,mask).date()
+   except ValueError:pass
+  return None
+
+ # Dados completos dos inventários fechados são reutilizados pelo histórico
+ # e pela carga de ajustes, sem misturar as contagens em andamento no Protheus.
  rows=[]
- for inv in st.session_state.inventories.values():
-  if inv['status']!='FECHADO':continue
-  for r in inv['rows']:
+ for inv in _registry_docs:
+  if inv.get('status')!='FECHADO':continue
+  for r in inv.get('rows',[]):
    _final=r.get('contagem_final')
    _ajuste_necessario=float(r.get('ajuste_necessario_qtd') or (diff(r,_final) if _final is not None else 0))
    rows.append({
     'Documento':inv['documento'],
-    'Data':inv['data'],
-    'Responsável':inv['responsavel'],
-    'Ciclo':inv['ciclo'],
+    'Data':inv.get('data',''),
+    'Responsável':inv.get('responsavel',''),
+    'Ciclo':inv.get('ciclo',''),
     'ID Interno':r.get('id',''),
     'Código':r['codigo'],
     'Descrição':r['descricao'],
     'Endereço':r['endereco'],
     'Qtd. Sistema':r['qtd_sistema'],
-    'Contagens':' | '.join(f"{x['etapa']}: {fn(x['quantidade'])} ({x['comentario']})" for x in r['contagens']),
+    'Contagens':' | '.join(f"{x['etapa']}: {fn(x['quantidade'])} ({x['comentario']})" for x in r.get('contagens',[])),
     'Contagem Final':_final,
     'Resultado':r.get('resultado_final',''),
     'Motivo Divergência':r.get('motivo_divergencia',''),
@@ -1639,90 +1648,263 @@ elif active=='Registro':
     'Autorizado em':r.get('ajuste_autorizado_em',''),
     'Valor Divergência':divergencia_valor(r,_final) if _final is not None else 0,
    })
- if rows:
-  df=pd.DataFrame(rows)
-  display_df=df.drop(columns=['ID Interno']).copy()
-  display_df['Valor Divergência']=display_df['Valor Divergência'].map(signed_brl)
-  _setta_dataframe(display_df,use_container_width=True,hide_index=True)
-  export_df=display_df.copy()
-  c1,c2,c3=st.columns(3)
-  c1.download_button('Exportar Registro em Excel',excel_bytes(export_df,'Registro'),'registro_inventarios.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',use_container_width=True)
-  # Só a confirmação SIM dá baixa; NÃO continua listado até execução.
-  ajustes=df[df['Ajuste Autorizado'].eq('SIM') & df['Status Ajuste'].ne('REALIZADO')].copy()
-  topic_divider()
-  section_band('03 · PROTHEUS','AJUSTES PENDENTES DE CONFIRMAÇÃO')
+ df=pd.DataFrame(rows)
+ # Só a confirmação SIM dá baixa; NÃO continua listado até execução.
+ ajustes=(df[df['Ajuste Autorizado'].eq('SIM') & df['Status Ajuste'].ne('REALIZADO')].copy()
+          if not df.empty else pd.DataFrame())
+ _count_records=build_count_rows(st.session_state.inventories)
+
+ tab_hist,tab_counts,tab_protheus=st.tabs([
+  'HISTÓRICO DE INVENTÁRIOS','CONFERÊNCIA DE CONTAGENS','AJUSTES PROTHEUS'
+ ])
+
+ with tab_hist:
+  section_band('01 · HISTÓRICO','VISÃO RESUMIDA DOS DOCUMENTOS','SELECIONE UM INVENTÁRIO PARA CONSULTAR SEUS DETALHES')
+  _hist_a,_hist_b,_hist_c=st.columns(3)
+  _hist_status=_hist_a.selectbox(
+   'SITUAÇÃO',['TODAS','EM ABERTO','FECHADO'],key='registry_history_status',
+  )
+  _hist_period=_hist_b.selectbox(
+   'PERÍODO',['TODO O PERÍODO','ÚLTIMOS 7 DIAS','ÚLTIMOS 30 DIAS','PERSONALIZADO'],
+   key='registry_history_period',
+  )
+  _hist_document=_hist_c.selectbox(
+   'DOCUMENTO',['TODOS']+list(_registry_by_doc),key='registry_history_document',
+  )
+  _hist_from=None
+  _hist_until=None
+  if _hist_period=='PERSONALIZADO':
+   _date_a,_date_b=st.columns(2)
+   _hist_from=_date_a.date_input('DATA INICIAL',value=now_local().date(),key='registry_history_date_from')
+   _hist_until=_date_b.date_input('DATA FINAL',value=now_local().date(),key='registry_history_date_until')
+   if _hist_from>_hist_until:
+    st.warning('DATA INICIAL MAIOR QUE DATA FINAL. REVISE O PERÍODO.')
+  elif _hist_period!='TODO O PERÍODO':
+   _hist_until=now_local().date()
+   _hist_from=_hist_until-timedelta(days=6 if _hist_period=='ÚLTIMOS 7 DIAS' else 29)
+
+  _hist_visible=[]
+  for _inv in _registry_docs:
+   if _hist_document!='TODOS' and str(_inv['documento'])!=_hist_document:continue
+   if _hist_status=='FECHADO' and _inv.get('status')!='FECHADO':continue
+   if _hist_status=='EM ABERTO' and _inv.get('status')=='FECHADO':continue
+   _when=_registry_day(_inv)
+   if _hist_from is not None and (_when is None or not (_hist_from<=_when<=_hist_until)):continue
+   _hist_visible.append(_inv)
+
+  if _hist_visible:
+   _history_summary=[]
+   for _inv in _hist_visible:
+    _positions=_inv.get('rows') or []
+    _history_summary.append({
+     'Documento':str(_inv['documento']),
+     'Data':str(_inv.get('data') or ''),
+     'Situação':str(_inv.get('status') or ''),
+     'Responsável':str(_inv.get('responsavel') or ''),
+     'Produtos':len({str(r.get('codigo') or '') for r in _positions}),
+     'Posições':len(_positions),
+     'Contadas':sum(bool(r.get('contagens')) for r in _positions),
+    })
+   _setta_dataframe(pd.DataFrame(_history_summary),use_container_width=True,hide_index=True)
+   _selected_doc=st.selectbox(
+    'ABRIR DETALHES DO DOCUMENTO',
+    [str(inv['documento']) for inv in _hist_visible],
+    key='registry_selected_history_doc',
+   )
+   _detail_doc=_registry_by_doc.get(_selected_doc)
+   if _detail_doc:
+    with st.expander('VER ITENS, CONTAGENS E TRATATIVAS DO DOCUMENTO',expanded=False):
+     _detail_rows=[]
+     for _item in _detail_doc.get('rows',[]):
+      _counts=_item.get('contagens') or []
+      _detail_rows.append({
+       'Código':_item.get('codigo',''),
+       'Descrição':_item.get('descricao',''),
+       'Endereço':_item.get('endereco',''),
+       'Qtd. Sistema':_item.get('qtd_sistema'),
+       'Última Contagem':_counts[-1].get('quantidade') if _counts else None,
+       'Contagem Final':_item.get('contagem_final'),
+       'Status':_item.get('status',''),
+       'Resultado':_item.get('resultado_final',''),
+       'Tratativa':_item.get('tratativa_divergencia',''),
+       'Histórico': ' | '.join(
+        f"{c.get('etapa','CONTAGEM')}: {fn(c.get('quantidade',0))} ({c.get('comentario','SC')})"
+        for c in _counts
+       ),
+      })
+     _detail_frame=pd.DataFrame(_detail_rows)
+     if not _detail_frame.empty:
+      _setta_dataframe(_detail_frame,use_container_width=True,hide_index=True)
+      st.download_button(
+       'EXPORTAR DETALHES DO DOCUMENTO',
+       excel_bytes(_detail_frame,'Inventario'),
+       file_name=f'inventario_{_selected_doc}.xlsx',
+       mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+       key='registry_export_detail',
+       use_container_width=True,
+      )
+     else:
+      st.info('DOCUMENTO SEM ITENS REGISTRADOS.')
+  else:
+   st.info('NENHUM INVENTÁRIO CORRESPONDE AOS FILTROS SELECIONADOS.')
+
+  if not df.empty:
+   _history_export=df.drop(columns=['ID Interno']).copy()
+   _history_export['Valor Divergência']=_history_export['Valor Divergência'].map(signed_brl)
+   st.download_button(
+    'Exportar Registro em Excel',
+    excel_bytes(_history_export,'Registro'),
+    'registro_inventarios.xlsx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    key='registry_export_all_closed',
+    use_container_width=True,
+   )
+   st.caption('EXPORTAÇÃO COMPLETA DOS INVENTÁRIOS FECHADOS, COM TODAS AS TRATATIVAS.')
+  else:
+   st.caption('AINDA NÃO EXISTEM INVENTÁRIOS FECHADOS PARA EXPORTAÇÃO.')
+
+ with tab_counts:
+  section_band('02 · CONFERÊNCIA','CONTAGENS REGISTRADAS','INCLUI INVENTÁRIOS ABERTOS E FECHADOS · NÃO É CARGA PARA O PROTHEUS')
+  if _count_records:
+   _count_frame=pd.DataFrame(_count_records)
+   _filter_a,_filter_b,_filter_c=st.columns(3)
+   _count_doc=_filter_a.selectbox(
+    'DOCUMENTO',['TODOS']+sorted(_count_frame['Documento'].unique().tolist(),reverse=True),
+    key='registry_count_document',
+   )
+   _count_status=_filter_b.selectbox(
+    'SITUAÇÃO',['TODAS']+sorted(_count_frame['Situação Inventário'].unique().tolist()),
+    key='registry_count_status',
+   )
+   _count_material=_filter_c.text_input(
+    'BUSCAR MATERIAL OU ENDEREÇO',placeholder='Código, descrição ou endereço',
+    key='registry_count_material',
+   ).strip()
+   _count_filtered=_count_frame.copy()
+   if _count_doc!='TODOS':
+    _count_filtered=_count_filtered[_count_filtered['Documento'].eq(_count_doc)]
+   if _count_status!='TODAS':
+    _count_filtered=_count_filtered[_count_filtered['Situação Inventário'].eq(_count_status)]
+   if _count_material:
+    _search_match=(
+     _count_filtered['Código'].astype(str).str.contains(_count_material,case=False,regex=False) |
+     _count_filtered['Descrição'].astype(str).str.contains(_count_material,case=False,regex=False) |
+     _count_filtered['Endereço'].astype(str).str.contains(_count_material,case=False,regex=False)
+    )
+    _count_filtered=_count_filtered.loc[_search_match]
+   if not _count_filtered.empty:
+    _count_compact=_count_filtered[[
+     'Documento','Situação Inventário','Código','Descrição','Endereço',
+     'Qtd. Sistema','Última Contagem','Diferença de Quantidade',
+    ]].copy()
+    _setta_dataframe(_count_compact,use_container_width=True,hide_index=True)
+    with st.expander('VER HISTÓRICO COMPLETO DAS CONTAGENS',expanded=False):
+     _setta_dataframe(_count_filtered,use_container_width=True,hide_index=True)
+    st.download_button(
+     'Contagens registradas · Excel',
+     excel_bytes(_count_filtered,'CONTAGENS'),
+     'conferencia_contagens_inventarios.xlsx',
+     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     key='registry_export_counts',
+     use_container_width=True,
+    )
+   else:
+    st.info('NENHUMA CONTAGEM CORRESPONDE AOS FILTROS SELECIONADOS.')
+  else:
+   st.info('NENHUMA CONTAGEM REGISTRADA NOS INVENTÁRIOS CONSULTADOS.')
+
+ with tab_protheus:
+  section_band('03 · PROTHEUS','AJUSTES PENDENTES DE CONFIRMAÇÃO','SOMENTE INVENTÁRIOS FECHADOS COM AJUSTE AUTORIZADO')
   if not ajustes.empty:
-   st.markdown(f"**{len(ajustes)} AJUSTE(S) AGUARDANDO CONFIRMAÇÃO DE EXECUÇÃO**")
-   if _can_confirm_adjustment():
-    # Confirmação visível antes do relatório, não escondida abaixo da tabela.
-    with st.container(border=True):
-     st.markdown('#### CONFIRMAR AJUSTE NO PROTHEUS')
-     opcoes={
-      f"{row['Documento']} | {row['Código']} | {row['Endereço']} | {row['Status Ajuste']}":
-      (row['Documento'],row['ID Interno'])
-      for _,row in ajustes.iterrows()
-     }
-     with st.form('confirmacao_ajuste_protheus',clear_on_submit=True):
-      alvo=st.selectbox('SELECIONE O MATERIAL / ENDEREÇO',list(opcoes.keys()))
-      _doc,_id=opcoes[alvo]
-      _selected=ajustes[
-       ajustes['Documento'].eq(_doc) & ajustes['ID Interno'].eq(_id)
-      ].iloc[0]
-      st.markdown(f"**DESCRIÇÃO:** {_selected['Descrição']}")
+   _pending_docs=sorted(ajustes['Documento'].unique().tolist(),reverse=True)
+   _filter_protheus=st.selectbox(
+    'DOCUMENTO',['TODOS']+_pending_docs,key='registry_protheus_document',
+   )
+   _ajustes_visiveis=(ajustes if _filter_protheus=='TODOS'
+                     else ajustes[ajustes['Documento'].eq(_filter_protheus)]).copy()
+   st.markdown(f"**{len(_ajustes_visiveis)} AJUSTE(S) PENDENTE(S) NA SELEÇÃO**")
+   if not _ajustes_visiveis.empty:
+    if _can_confirm_adjustment():
+     with st.container(border=True):
+      st.markdown('#### CONFIRMAR AJUSTE NO PROTHEUS')
+      _adjustment_options=list(_ajustes_visiveis.index)
+      _chosen=st.selectbox(
+       'SELECIONE O MATERIAL / ENDEREÇO',
+       _adjustment_options,
+       format_func=lambda i: (
+        f"{_ajustes_visiveis.loc[i,'Documento']} | "
+        f"{_ajustes_visiveis.loc[i,'Código']} | "
+        f"{_ajustes_visiveis.loc[i,'Endereço']} | "
+        f"{_ajustes_visiveis.loc[i,'Status Ajuste']}"
+       ),
+       key='registry_adjustment_target',
+      )
+      _selected=_ajustes_visiveis.loc[_chosen]
+      _doc=str(_selected['Documento'])
+      _id=str(_selected['ID Interno'])
       _a,_b,_c=st.columns(3)
       _a.metric('SALDO SISTEMA',fn(_selected['Qtd. Sistema']))
       _b.metric('SALDO FÍSICO',fn(_selected['Contagem Final']))
       _c.metric('AJUSTE NECESSÁRIO',fn(_selected['Ajuste Necessário']))
-      realizado=st.radio('O AJUSTE FOI LANÇADO NO PROTHEUS?',['SIM','NÃO'],horizontal=True)
-      observacao=st.text_input(
-       'NÚMERO DO MOVIMENTO / OBSERVAÇÃO',
-       placeholder='Se SIM: nº do lançamento. Se NÃO: motivo da pendência.',
-      )
-      salvar=st.form_submit_button(
-       'REGISTRAR CONFIRMAÇÃO',type='primary',use_container_width=True,
-      )
-     if salvar:
-      if not observacao.strip():
-       st.error('INFORME O NÚMERO DO LANÇAMENTO OU O MOTIVO DA PENDÊNCIA.')
-      elif confirm_adjustment(_doc,_id,realizado=='SIM',observacao):
-       st.rerun()
+      st.caption(f"**MATERIAL:** {_selected['Descrição']}")
+      with st.form('confirmacao_ajuste_protheus',clear_on_submit=True):
+       realizado=st.radio('O AJUSTE FOI LANÇADO NO PROTHEUS?',['SIM','NÃO'],horizontal=True)
+       observacao=st.text_input(
+        'NÚMERO DO MOVIMENTO / OBSERVAÇÃO',
+        placeholder='Se SIM: nº do lançamento. Se NÃO: motivo da pendência.',
+       )
+       salvar=st.form_submit_button(
+        'REGISTRAR CONFIRMAÇÃO',type='primary',use_container_width=True,
+       )
+      if salvar:
+       if not observacao.strip():
+        st.error('INFORME O NÚMERO DO LANÇAMENTO OU O MOTIVO DA PENDÊNCIA.')
+       elif confirm_adjustment(_doc,_id,realizado=='SIM',observacao):
+        st.rerun()
+    else:
+     st.info('PARA CONFIRMAR AJUSTES, IDENTIFIQUE-SE COM UM USUÁRIO SETTA DO ALMOXARIFADO.')
+    st.markdown('#### AJUSTES AINDA PENDENTES')
+    _setta_dataframe(_ajustes_visiveis[[
+     'Documento','Código','Descrição','Endereço',
+     'Ajuste Necessário','Ação Protheus','Status Ajuste',
+    ]].copy(),use_container_width=True,hide_index=True)
+    _carga=_ajustes_visiveis[[
+     'Documento','Código','Descrição','Endereço','Qtd. Sistema','Contagem Final',
+     'Ação Protheus','Qtd. Ajuste','Ajuste Necessário','Motivo Divergência',
+     'Autorizado por','Autorizado em',
+    ]].copy()
+    _carga['QUANTIDADE PROTHEUS']=_carga['Qtd. Ajuste'].abs()
+    _carga['AJUSTE QTD (SINAL)']=_carga['Ajuste Necessário']
+    _carga=_carga.rename(columns={
+     'Ação Protheus':'AÇÃO PROTHEUS',
+     'Qtd. Sistema':'SALDO SISTEMA',
+     'Contagem Final':'SALDO FÍSICO',
+     'Motivo Divergência':'MOTIVO',
+     'Autorizado por':'AUTORIZADO POR',
+     'Autorizado em':'AUTORIZADO EM',
+    })
+    _carga=_carga[[
+     'Documento','Código','Descrição','Endereço','AÇÃO PROTHEUS',
+     'QUANTIDADE PROTHEUS','AJUSTE QTD (SINAL)','SALDO SISTEMA','SALDO FÍSICO',
+     'MOTIVO','AUTORIZADO POR','AUTORIZADO EM',
+    ]]
+    _csv=_carga.to_csv(index=False,sep=';',decimal=',').encode('utf-8-sig')
+    _exp_a,_exp_b=st.columns(2)
+    _exp_a.download_button(
+     'Ajustes Protheus · Excel',
+     excel_bytes(_carga,'AJUSTES PROTHEUS'),
+     'ajustes_protheus.xlsx',
+     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     use_container_width=True,
+    )
+    _exp_b.download_button(
+     'Ajustes Protheus · CSV',
+     _csv,'ajustes_protheus.csv','text/csv',use_container_width=True,
+    )
    else:
-    st.info('PARA CONFIRMAR AJUSTES, IDENTIFIQUE-SE COM UM USUÁRIO SETTA DO ALMOXARIFADO.')
-   st.markdown('#### AJUSTES AINDA PENDENTES')
-   pendentes=ajustes[[
-    'Documento','Código','Descrição','Endereço',
-    'Ajuste Necessário','Ação Protheus','Status Ajuste'
-   ]].copy()
-   _setta_dataframe(pendentes,use_container_width=True,hide_index=True)
+    st.info('NENHUM AJUSTE CORRESPONDE AO DOCUMENTO SELECIONADO.')
   else:
    st.success('NENHUM AJUSTE PENDENTE DE CONFIRMAÇÃO.')
-  if not ajustes.empty:
-   carga=ajustes[[
-    'Documento','Código','Descrição','Endereço','Qtd. Sistema','Contagem Final',
-    'Ação Protheus','Qtd. Ajuste','Ajuste Necessário','Motivo Divergência',
-    'Autorizado por','Autorizado em'
-   ]].copy()
-   carga['QUANTIDADE PROTHEUS']=carga['Qtd. Ajuste'].abs()
-   carga['AJUSTE QTD (SINAL)']=carga['Ajuste Necessário']
-   carga=carga.rename(columns={
-    'Ação Protheus':'AÇÃO PROTHEUS',
-    'Qtd. Sistema':'SALDO SISTEMA',
-    'Contagem Final':'SALDO FÍSICO',
-    'Motivo Divergência':'MOTIVO',
-    'Autorizado por':'AUTORIZADO POR',
-    'Autorizado em':'AUTORIZADO EM',
-   })
-   carga=carga[[
-    'Documento','Código','Descrição','Endereço','AÇÃO PROTHEUS',
-    'QUANTIDADE PROTHEUS','AJUSTE QTD (SINAL)','SALDO SISTEMA','SALDO FÍSICO',
-    'MOTIVO','AUTORIZADO POR','AUTORIZADO EM'
-   ]]
-   c2.download_button('Ajustes Protheus · Excel',excel_bytes(carga,'AJUSTES PROTHEUS'),'ajustes_protheus.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',use_container_width=True)
-   _csv=carga.to_csv(index=False,sep=';',decimal=',').encode('utf-8-sig')
-   c3.download_button('Ajustes Protheus · CSV',_csv,'ajustes_protheus.csv','text/csv',use_container_width=True)
-  else:
-   c2.caption('Nenhum ajuste pendente para exportação.')
- else:st.info('Nenhum inventário fechado.')
 
 # Reportar Inconsistências
 elif active=='Reportar Inconsistências':
