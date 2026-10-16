@@ -28,11 +28,13 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
       - name: Compilar
-        run: python -m py_compile app.py central_inventory_data.py setta_shell.py setta_auth.py scripts/validate_base.py
+        run: python -m py_compile app.py central_inventory_data.py inventory_reports.py setta_shell.py setta_auth.py scripts/validate_base.py scripts/test_inventory_reports.py
       - name: Validar baseline
         run: python scripts/validate_base.py
       - name: Testar prioridade de contagens
         run: python scripts/test_cycle_priority.py
+      - name: Testar relatório de contagens e Protheus
+        run: python scripts/test_inventory_reports.py
       - name: Validar integração
         run: |
           python - <<'PY'
