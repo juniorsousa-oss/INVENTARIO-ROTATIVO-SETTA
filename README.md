@@ -62,7 +62,12 @@ As funções PostgreSQL correspondentes são `SECURITY DEFINER` e só concedem e
 
 ## Autenticação e perfis
 
-O cadastro de usuários continua centralizado no OperaHub.
+O login principal permanece integrado ao **OperaHub**. Contas operacionais
+legadas cadastradas no **Supabase Auth** também podem entrar utilizando
+o próprio e-mail e senha, desde que possuam autorização explícita na tabela
+`inventario_acessos_especiais`. Usuários sem essa autorização não recebem
+acesso pela autenticação alternativa. A verificação da senha é executada pelo
+Supabase Auth; nenhuma senha é copiada ou cadastrada no OperaHub.
 
 Enquanto a política global `login_required` estiver desligada, leitura e operação básica podem abrir como **Operador não identificado**. A sidebar permite identificação voluntária com o mesmo usuário e senha do OperaHub.
 
