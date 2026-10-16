@@ -369,6 +369,30 @@ for migration_name in [
     if not (ROOT / "supabase/migrations" / migration_name).exists():
         fail(f"Migration ausente: {migration_name}")
 
+# Layout compacto: tabelas de conferência e lançamento ficam em abas distintas.
+registry = app.split("# Register — visão resumida e ações separadas por finalidade.", 1)[-1].split(
+    "# Reportar Inconsistências", 1
+)[0]
+if not registry or registry == app:
+    fail("Registro com abas não encontrado.")
+for token in [
+    "tab_hist,tab_counts,tab_protheus=st.tabs(",
+    "'HISTÓRICO DE INVENTÁRIOS','CONFERÊNCIA DE CONTAGENS','AJUSTES PROTHEUS'",
+    "VER ITENS, CONTAGENS E TRATATIVAS DO DOCUMENTO",
+    "VER HISTÓRICO COMPLETO DAS CONTAGENS",
+    "registry_history_period",
+    "registry_count_material",
+    "registry_protheus_document",
+    "df['Ajuste Autorizado'].eq('SIM') & df['Status Ajuste'].ne('REALIZADO')",
+    "Ajustes Protheus · Excel",
+    "Ajustes Protheus · CSV",
+]:
+    if token not in registry:
+        fail(f"Regressão no Registro/Protheus: {token}")
+if "_setta_dataframe(_count_frame" in registry or "_setta_dataframe(display_df" in registry:
+    fail("Tabela detalhada voltou a ocupar a página principal do Registro.")
+
+
 build = re.search(r"BUILD_DIAGNOSTICO\s*=\s*'([^']+)'", app)
 if not build:
     fail("BUILD_DIAGNOSTICO ausente.")
