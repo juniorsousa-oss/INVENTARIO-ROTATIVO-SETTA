@@ -6,3 +6,4 @@ firebase-admin==7.7.0
 requests==2.34.2
 altair==6.3.0
 Pillow==11.3.0
+# Rebuild Streamlit Community Cloud: 2026-10-16 — sincronizar acesso Almoxarifado
