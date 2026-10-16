@@ -69,7 +69,12 @@ Enquanto a política global `login_required` estiver desligada, leitura e opera�
 O perfil não pode mais ser selecionado manualmente:
 
 - usuário anônimo ou usuário comum -> **Operador**;
-- role `admin` ou `gestor` autenticada -> **Gestor**.
+- role `admin` ou `gestor` autenticada -> **Gestor**;
+- perfil especial `ALMOXARIFADO` do Inventário -> **Almoxarifado**, com as mesmas autorizações do Gestor para análise, tratativa, auditoria, encerramento, exclusão de inventários abertos e configurações. Continua apto a realizar contagens e conferir devoluções.
+
+O acesso `ALMOXARIFADO` exige um usuário existente e ativo no OperaHub
+com perfil vinculado em `inventario_acessos_especiais`. Autorizações são
+verificadas novamente na API, usando uma sessão temporária autenticada.
 
 Ao autenticar, a `setta-data-api` cria uma sessão temporária específica do Inventário, válida por 8 horas. O token é necessário no backend para:
 
@@ -79,6 +84,20 @@ Ao autenticar, a `setta-data-api` cria uma sessão temporária específica do In
 Logout invalida a sessão no servidor.
 
 Contagens, inventários e inconsistências novos registram usuário/perfil quando disponíveis.
+
+## Relatórios de contagens e Protheus
+
+O menu **Registro** atualiza os inventários a partir do Supabase ao entrar
+na tela, repete a atualização a cada 30 segundos durante a navegação
+e oferece o botão **Atualizar contagens agora**.
+
+O relatório de **Contagens registradas** inclui itens que já receberam ao menos
+uma contagem, mesmo que o inventário ainda esteja em execução ou em análise.
+Ele é de conferência e **não** pode ser usado como carga de ajuste no ERP.
+
+A carga **Ajustes Protheus** continua exclusiva de documentos FECHADOS com
+`ajuste_autorizado=true` e ajuste ainda não confirmado como REALIZADO.
+Divergências **ENCERRADAS SEM AJUSTE** não integram essa carga.
 
 ## Horário
 
