@@ -1,4 +1,4 @@
-import os, io, copy, pickle, sqlite3, tempfile, uuid
+import os, io, copy, pickle, sqlite3, tempfile, uuid, time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from PIL import Image
@@ -43,6 +43,7 @@ from firebase_admin import credentials, firestore
 import central_inventory_data as central_data
 import setta_shell
 import setta_auth
+from inventory_reports import build_count_rows
 
 try:
  _GLOBAL_VISUAL_CONFIG=central_data.load_visual_config()
@@ -88,7 +89,7 @@ def now_local():
 # O shell é emitido antes de qualquer leitura remota operacional.
 setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
 
-BUILD_DIAGNOSTICO = 'inventory-20261008-gestor-ui-delete'
+BUILD_DIAGNOSTICO = 'inventory-20261016-almox-role-protheus-report'
 INVENTORY_DATA_EPOCH='20261007-RESET-01'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
@@ -301,6 +302,22 @@ def _session_profile():
 def _session_auth_token():
  user=_auth_user()
  return str((user or {}).get('inventory_token') or '').strip()
+
+def _can_manage_inventory():
+ # Somente o Gestor ou o Almoxarifado autenticados podem autorizar decisões.
+ return bool(_auth_user() and _session_auth_token()
+             and _session_profile() in {'Gestor','Almoxarifado'})
+
+def _refresh_inventory_documents():
+ # Fonte de verdade: estado persistente na API. Não usar o SQLite da sessão
+ # como relatório consolidado entre diferentes operadores.
+ state=central_data.operational_state(['inventories'])
+ documents=state.get('inventories')
+ if not isinstance(documents,dict):
+  raise RuntimeError('A API não retornou os inventários persistidos.')
+ st.session_state.inventories=documents
+ st.session_state['_inventory_last_refresh']=time.monotonic()
+ return len(documents)
 
 def _authenticate_user(login,password):
  user=setta_auth.authenticate(central_data.supabase_key(),login,password)
@@ -713,8 +730,8 @@ def persist_inv(inv):
 def delete_open_inventory(documento):
  doc=str(documento or '').strip()
  inv=st.session_state.inventories.get(doc)
- if _session_profile()!='Gestor' or not inv or inv.get('status')=='FECHADO':
-  st.session_state['_inventory_delete_error']='EXCLUSÃO PERMITIDA SOMENTE AO GESTOR PARA INVENTÁRIOS EM ABERTO.'
+ if not _can_manage_inventory() or not inv or inv.get('status')=='FECHADO':
+  st.session_state['_inventory_delete_error']='EXCLUSÃO PERMITIDA SOMENTE AO GESTOR OU ALMOXARIFADO AUTENTICADOS PARA INVENTÁRIOS EM ABERTO.'
   return False
  try:
   central_data.delete_inventory_document(doc,_session_auth_token())
@@ -792,6 +809,9 @@ def divergência(r,q):return abs(divergencia_valor(r,q))
 def sev(v):return 'BAIXO' if v<=100 else 'MÉDIO' if v<=1000 else 'ALTO'
 
 def close_inv(inv):
+ if not _can_manage_inventory():
+  st.session_state['_inventory_close_error']='AUTENTIQUE UM GESTOR OU ALMOXARIFADO PARA AUTORIZAR O ENCERRAMENTO.'
+  return False
  doc=str(inv.get('documento') or '').strip()
  pendentes=[r for r in inv.get('rows',[]) if r.get('status')!='FINALIZADO']
  if pendentes:
@@ -1165,6 +1185,28 @@ _sidebar_status_slot.markdown(
 
 active=_current_inventory_page()
 
+# Contagens e novas análises podem ser feitas por outro operador na mesma hora.
+# Atualiza ao entrar na tela e periodicamente, sem descaracterizar o fluxo local.
+if active in {'Inventário Rotativo','Registro'}:
+ _inventory_last_page=st.session_state.get('_inventory_last_page')
+ _inventory_refresh_due=(
+  _inventory_last_page!=active
+  or time.monotonic()-st.session_state.get('_inventory_last_refresh',0)>=30
+ )
+ if _inventory_refresh_due:
+  try:
+   _refresh_inventory_documents()
+   st.session_state.pop('_inventory_refresh_error',None)
+  except Exception as exc:
+   st.session_state['_inventory_refresh_error']=str(exc)
+   st.session_state['_inventory_last_refresh']=time.monotonic()
+ st.session_state['_inventory_last_page']=active
+ if st.session_state.get('_inventory_refresh_error'):
+  st.warning('NÃO FOI POSSÍVEL SINCRONIZAR AS ÚLTIMAS CONTAGENS: '+st.session_state['_inventory_refresh_error'])
+else:
+ st.session_state['_inventory_last_page']=active
+
+
 # Dashboard
 if active=='Dashboard':
  st.markdown('<div class="section-title">DASHBOARD OPERACIONAL</div>',unsafe_allow_html=True)
@@ -1318,7 +1360,7 @@ elif active=='Inventário Rotativo':
    for inv in items:
     with st.container(border=True):
      s=len(inv['rows']);prod=len({r['codigo'] for r in inv['rows']});a,b,c,d=st.columns([2.2,1.5,1,1]);a.markdown(f'**{inv["documento"]}**');a.caption(f'Ciclo {inv["ciclo"]} · {inv["data"]}');b.write(f'**{inv["status"]}**');c.metric('Produtos',prod);d.metric('Posições',s)
-     _show_delete=_session_profile()=='Gestor' and inv.get('status')!='FECHADO'
+     _show_delete=_can_manage_inventory() and inv.get('status')!='FECHADO'
      _open_col,_delete_col=st.columns(2) if _show_delete else (st.container(),None)
      if _open_col.button('ABRIR',key='op_'+inv['documento'],use_container_width=True):
       st.session_state.selected=inv['documento'];st.rerun()
@@ -1340,7 +1382,7 @@ elif active=='Inventário Rotativo':
    st.error('NÃO FOI POSSÍVEL EXCLUIR: '+str(st.session_state['_inventory_delete_error']))
   _delete_target=st.session_state.get('delete_inv_target')
   _delete_inv=st.session_state.inventories.get(_delete_target) if _delete_target else None
-  if _delete_inv and _delete_inv.get('status')!='FECHADO' and _session_profile()=='Gestor':
+  if _delete_inv and _delete_inv.get('status')!='FECHADO' and _can_manage_inventory():
    with st.container(border=True):
     st.warning(f'EXCLUIR INVENTÁRIO {_delete_target}? ESTA AÇÃO É IRREVERSÍVEL E DESCARTA TODAS AS CONTAGENS DESTE DOCUMENTO.')
     _typed=st.text_input('DIGITE O NÚMERO DO INVENTÁRIO PARA CONFIRMAR',key='inventory_delete_confirmation',placeholder=_delete_target)
@@ -1358,7 +1400,7 @@ elif active=='Inventário Rotativo':
   if doc in st.session_state.inventories:
    inv=st.session_state.inventories[doc];st.divider();st.markdown(f'### Inventário {doc} — {inv["status"]}')
    prof=_session_profile()
-   if prof=='Operador' and inv['status']=='EM CONTAGEM':
+   if prof in {'Operador','Almoxarifado'} and inv['status']=='EM CONTAGEM':
     total_pos=len(inv['rows'])
     counted_pos=sum(1 for r in inv['rows'] if r['contagens'])
     pending_pos=total_pos-counted_pos
@@ -1388,7 +1430,7 @@ elif active=='Inventário Rotativo':
        addcount(r,q,cm,'1ª CONTAGEM')
        if persist_inv(inv):st.rerun()
        else:st.error('Não foi possível salvar a contagem.')
-   elif prof=='Gestor' and inv['status']=='AGUARDANDO ANÁLISE':
+   elif _can_manage_inventory() and inv['status']=='AGUARDANDO ANÁLISE':
     st.markdown('#### Análise da 1ª contagem')
     # 1ª contagem: igual ao sistema confirma; divergente segue para decisão.
     for r in inv['rows']:
@@ -1423,7 +1465,7 @@ elif active=='Inventário Rotativo':
        st.session_state.section='Registro' if any(r.get('ajuste_autorizado') for r in inv.get('rows',[])) else 'Inventário Rotativo'
        st.rerun()
      else:st.error(st.session_state.get('_inventory_close_error') or 'Não foi possível encerrar o inventário. A operação foi revertida.')
-   elif prof=='Operador' and inv['status']=='AGUARDANDO RECONTAGEM':
+   elif prof in {'Operador','Almoxarifado'} and inv['status']=='AGUARDANDO RECONTAGEM':
     st.markdown('#### Recontagem — itens liberados pelo gestor')
     targets=[r for r in inv['rows'] if r['status']=='RECONTAR']
     for r in targets:
@@ -1431,7 +1473,7 @@ elif active=='Inventário Rotativo':
       st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(r['descricao']);st.caption('Histórico: '+' → '.join(f"{x['etapa']}: {fn(x['quantidade'])}" for x in r['contagens']));q=st.number_input('Nova contagem',0.0,step=.001,format='%.3f',key='q2_'+r['id']);cm=st.text_input('Comentário (opcional)',key='cm2_'+r['id'])
       if st.button('Salvar nova contagem',key='sv2_'+r['id'],type='primary'):addcount(r,q,cm,f'{len(r["contagens"])+1}ª CONTAGEM');r['status']='RECONTADA';persist_inv(inv);st.rerun()
     if not any(r['status']=='RECONTAR' for r in inv['rows']):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
-   elif prof=='Gestor' and inv['status']=='AGUARDANDO DECISÃO':
+   elif _can_manage_inventory() and inv['status']=='AGUARDANDO DECISÃO':
     st.markdown('#### Avaliação após cada recontagem')
     # Mesma regra para 2ª, 3ª e todas as contagens seguintes.
     candidates=[r for r in inv['rows'] if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9]
@@ -1467,7 +1509,7 @@ elif active=='Inventário Rotativo':
        st.session_state.section='Registro' if any(r.get('ajuste_autorizado') for r in inv.get('rows',[])) else 'Inventário Rotativo'
        st.rerun()
      else:st.error('Não foi possível encerrar o inventário. A operação foi revertida.')
-   elif prof=='Gestor' and inv['status']=='AGUARDANDO AUDITORIA':
+   elif _can_manage_inventory() and inv['status']=='AGUARDANDO AUDITORIA':
     st.markdown('#### Auditoria / 3ª ou próxima contagem')
     targets=[r for r in inv['rows'] if r['status']=='AUDITORIA']
     for r in targets:
@@ -1475,7 +1517,7 @@ elif active=='Inventário Rotativo':
       st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(r['descricao']);st.caption('Histórico: '+' → '.join(f"{x['etapa']}: {fn(x['quantidade'])}" for x in r['contagens']));q=st.number_input('Contagem de auditoria',0.0,step=.001,format='%.3f',key='q3_'+r['id']);cm=st.text_input('Comentário (opcional)',key='cm3_'+r['id'])
       if st.button('Salvar auditoria',key='sv3_'+r['id'],type='primary'):addcount(r,q,cm,'AUDITORIA');r['status']='AUDITADA';persist_inv(inv);st.rerun()
     if not any(r['status']=='AUDITORIA' for r in inv['rows']):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
-   elif prof=='Gestor' and inv['status']=='FECHADO':
+   elif _can_manage_inventory() and inv['status']=='FECHADO':
     st.success('Inventário encerrado e salvo no registro.');
     if st.button('Reabrir análise'):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
 
@@ -1538,7 +1580,33 @@ elif active=='Banco de Dados':
 
 # Register
 elif active=='Registro':
- section_band('01 · REGISTRO','HISTÓRICO DE INVENTÁRIOS');rows=[]
+ section_band('01 · REGISTRO','HISTÓRICO DE INVENTÁRIOS')
+ if st.button('ATUALIZAR CONTAGENS AGORA',key='refresh_registry_counts'):
+  try:
+   _refresh_inventory_documents()
+   st.session_state.pop('_inventory_refresh_error',None)
+   st.rerun()
+  except Exception as exc:
+   st.error('FALHA AO ATUALIZAR OS INVENTÁRIOS: '+str(exc))
+
+ # Relatório de conferência: traz contagens novas mesmo antes da análise.
+ # Estas linhas não são uma carga de ajuste autorizada ao Protheus.
+ _count_records=build_count_rows(st.session_state.inventories)
+ topic_divider()
+ section_band('02 · CONFERÊNCIA','CONTAGENS REGISTRADAS','INCLUI INVENTÁRIOS ABERTOS E FECHADOS · NÃO É CARGA PARA O PROTHEUS')
+ if _count_records:
+  _count_frame=pd.DataFrame(_count_records)
+  _setta_dataframe(_count_frame,use_container_width=True,hide_index=True)
+  st.download_button(
+   'Contagens registradas · Excel',
+   excel_bytes(_count_frame,'CONTAGENS'),
+   'conferencia_contagens_inventarios.xlsx',
+   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+   use_container_width=True,
+  )
+ else:
+  st.info('NENHUMA CONTAGEM REGISTRADA NOS INVENTÁRIOS CONSULTADOS.')
+ rows=[]
  for inv in st.session_state.inventories.values():
   if inv['status']!='FECHADO':continue
   for r in inv['rows']:
@@ -1582,7 +1650,7 @@ elif active=='Registro':
   # Só a confirmação SIM dá baixa; NÃO continua listado até execução.
   ajustes=df[df['Ajuste Autorizado'].eq('SIM') & df['Status Ajuste'].ne('REALIZADO')].copy()
   topic_divider()
-  section_band('02 · PROTHEUS','AJUSTES PENDENTES DE CONFIRMAÇÃO')
+  section_band('03 · PROTHEUS','AJUSTES PENDENTES DE CONFIRMAÇÃO')
   if not ajustes.empty:
    st.markdown(f"**{len(ajustes)} AJUSTE(S) AGUARDANDO CONFIRMAÇÃO DE EXECUÇÃO**")
    if _can_confirm_adjustment():
@@ -1867,7 +1935,7 @@ elif active=='Retornos de Produção':
 # User administration
 # Settings
 elif active=='Configurações':
- if _session_profile()!='Gestor':
+ if not _can_manage_inventory():
   section_band('01 · ACESSO','CONFIGURAÇÕES RESTRITAS','AUTENTIQUE UM USUÁRIO ADMINISTRADOR SETTA PARA ALTERAR CONFIGURAÇÕES.')
   if not _auth_user():
    with st.form('settings_auth_form',clear_on_submit=False):
@@ -1881,7 +1949,7 @@ elif active=='Configurações':
     except Exception as exc:
      st.error(f'Falha ao autenticar: {exc}')
   else:
-   st.warning('O usuário autenticado não possui perfil Gestor.')
+   st.warning('O usuário autenticado não possui perfil Gestor ou Almoxarifado autorizado.')
   st.stop()
  tab_inv,tab_api=st.tabs(['INVENTÁRIO','ACOMPANHAMENTO DE API'])
  with tab_inv:
