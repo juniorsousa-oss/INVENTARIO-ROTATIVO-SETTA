@@ -32,7 +32,8 @@ assert set(e.iloc[:,0])=={"00000001","00000004","00000005"}
 assert all(e["ARMZ"]=="S2")
 assert stats["has_address_warehouse"]
 # Endereços sem ARMZ deixam itens multi-armazém em quarentena.
-en_no_armz=en.drop(columns=["ARMZ"])
+en_no_armz=en.drop(columns=["ARMZ"]).copy()
+en_no_armz["XTRA"]=0
 a2,e2,stats2=filter_s2_sources(an,en_no_armz,exc)
 assert set(a2.iloc[:,0])=={"00000001","00000005"}
 assert set(e2.iloc[:,0])=={"00000001","00000005"}
