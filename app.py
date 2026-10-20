@@ -804,6 +804,35 @@ def addcount(r,q,cm,stage):
 
 def last(r):return r['contagens'][-1]['quantidade'] if r['contagens'] else None
 def diff(r,q):return float(q)-float(r['qtd_sistema'])
+
+def _decision_candidates(inv):
+ # Toda posição contada e ainda não finalizada exige análise, mesmo se a
+ # recontagem já tiver igualado o saldo do sistema.
+ return [
+  r for r in inv.get('rows',[])
+  if r.get('status')!='FINALIZADO' and r.get('contagens')
+ ]
+
+def _confirm_system_recount(r,actor):
+ # Confirma somente contagem existente que corresponde ao estoque do sistema.
+ # Nunca aprova ajuste Protheus nem altera contagens anteriores.
+ if r.get('status')=='FINALIZADO' or not r.get('contagens') or r.get('ajuste_autorizado'):
+  return False
+ q=last(r)
+ if abs(diff(r,q))>=1e-9:return False
+ r['contagem_final']=float(q)
+ r['resultado_final']='SISTEMA CONFIRMADO'
+ r['status']='FINALIZADO'
+ r['confirmado_por']=str(actor or '')
+ r['confirmado_em']=now_local().isoformat()
+ return True
+
+def _pending_inventory_message(inv):
+ pending=[r for r in inv.get('rows',[]) if r.get('status')!='FINALIZADO']
+ return '; '.join(
+  f"{r.get('codigo','?')} / {r.get('endereco','?')} ({r.get('status','PENDENTE')})"
+  for r in pending[:5]
+ )+(' ...' if len(pending)>5 else '')
 def divergencia_valor(r,q):return diff(r,q)*float(r['valor_unitario'])
 def divergência(r,q):return abs(divergencia_valor(r,q))
 def sev(v):return 'BAIXO' if v<=100 else 'MÉDIO' if v<=1000 else 'ALTO'
@@ -816,7 +845,9 @@ def close_inv(inv):
  pendentes=[r for r in inv.get('rows',[]) if r.get('status')!='FINALIZADO']
  if pendentes:
   st.session_state['_inventory_close_error']=(
-   f'{len(pendentes)} item(ns) ainda precisam ser concluídos antes do encerramento.'
+   f'{len(pendentes)} posição(ões) ainda precisam de análise: '
+   f'{_pending_inventory_message(inv)}. '
+   'Confirme os saldos ou registre as tratativas antes do encerramento.'
   )
   return False
  st.session_state.pop('_inventory_close_error',None)
@@ -1460,11 +1491,18 @@ elif active=='Inventário Rotativo':
      for r in inv['rows']:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
-    if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):
+    _pending_analysis=[r for r in inv['rows'] if r.get('status')!='FINALIZADO']
+    if _pending_analysis:
+     st.warning(
+      f'ENCERRAMENTO BLOQUEADO: {len(_pending_analysis)} posição(ões) aguardando análise. '
+      f'{_pending_inventory_message(inv)}'
+     )
+    if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True,disabled=bool(_pending_analysis)):
      if close_inv(inv):
        st.session_state.section='Registro' if any(r.get('ajuste_autorizado') for r in inv.get('rows',[])) else 'Inventário Rotativo'
        st.rerun()
-     else:st.error(st.session_state.get('_inventory_close_error') or 'Não foi possível encerrar o inventário. A operação foi revertida.')
+     else:
+      st.error(st.session_state.get('_inventory_close_error') or st.session_state.get('_operational_persistence_error') or 'Não foi possível encerrar o inventário. A operação foi revertida.')
    elif prof in {'Operador','Almoxarifado'} and inv['status']=='AGUARDANDO RECONTAGEM':
     st.markdown('#### Recontagem — itens liberados pelo gestor')
     targets=[r for r in inv['rows'] if r['status']=='RECONTAR']
@@ -1476,14 +1514,26 @@ elif active=='Inventário Rotativo':
    elif _can_manage_inventory() and inv['status']=='AGUARDANDO DECISÃO':
     st.markdown('#### Avaliação após cada recontagem')
     # Mesma regra para 2ª, 3ª e todas as contagens seguintes.
-    candidates=[r for r in inv['rows'] if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9]
-    if not candidates: st.success('Não existem itens pendentes de decisão.')
+    # Não ocultar recontagens que eliminaram a divergência: ainda não foram finalizadas.
+    candidates=_decision_candidates(inv)
+    if not candidates and not any(r.get('status')!='FINALIZADO' for r in inv['rows']):
+     st.success('Não existem itens pendentes de decisão.')
     for r in candidates:
      q2=last(r);q1=r['contagens'][-2]['quantidade'] if len(r['contagens'])>=2 else None
      with st.container(border=True):
       st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.caption(r.get('descricao',''));st.write(f'Sistema: **{fn(r["qtd_sistema"])}** · Anterior: **{fn(q1) if q1 is not None else "—"}** · Atual: **{fn(q2)}**')
-      if abs(q2-r['qtd_sistema'])<1e-9:
-       st.success('Atual igual ao sistema: SISTEMA CONFIRMADO. Nenhuma nova contagem é necessária.');r['contagem_final']=q2;r['resultado_final']='SISTEMA CONFIRMADO';r['status']='FINALIZADO';persist_inv(inv)
+      if abs(diff(r,q2))<1e-9:
+       st.success('A última contagem confirmou o saldo do sistema. Não é necessária outra recontagem ou ajuste Protheus.')
+       if r.get('ajuste_autorizado'):
+        st.warning('EXISTE AJUSTE PREVIAMENTE AUTORIZADO. REVISE ESTA TRATATIVA ANTES DE FINALIZAR.')
+       elif st.button('CONFIRMAR SALDO DO SISTEMA',key='confirm_recount_'+r['id'],type='primary',use_container_width=True):
+        _previous_row=copy.deepcopy(r)
+        if _confirm_system_recount(r,_session_operator()) and persist_inv(inv):
+         st.rerun()
+        else:
+         r.clear();r.update(_previous_row)
+         save('inventories',st.session_state.inventories)
+         st.error('NÃO FOI POSSÍVEL SALVAR A CONFIRMAÇÃO. O ITEM CONTINUA PENDENTE.')
       else:
        if q1 is not None and abs(q2-q1)<1e-9:
         st.success('A recontagem confirmou o físico. A divergência com o sistema permanece e agora exige tratativa do Gestor.')
@@ -1504,11 +1554,18 @@ elif active=='Inventário Rotativo':
      for r in inv['rows']:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
-    if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):
+    _pending_decisions=[r for r in inv['rows'] if r.get('status')!='FINALIZADO']
+    if _pending_decisions:
+     st.warning(
+      f'ENCERRAMENTO BLOQUEADO: {len(_pending_decisions)} posição(ões) aguardando conclusão. '
+      f'{_pending_inventory_message(inv)}'
+     )
+    if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True,disabled=bool(_pending_decisions)):
      if close_inv(inv):
        st.session_state.section='Registro' if any(r.get('ajuste_autorizado') for r in inv.get('rows',[])) else 'Inventário Rotativo'
        st.rerun()
-     else:st.error('Não foi possível encerrar o inventário. A operação foi revertida.')
+     else:
+      st.error(st.session_state.get('_inventory_close_error') or st.session_state.get('_operational_persistence_error') or 'Não foi possível encerrar o inventário. A operação foi revertida.')
    elif _can_manage_inventory() and inv['status']=='AGUARDANDO AUDITORIA':
     st.markdown('#### Auditoria / 3ª ou próxima contagem')
     targets=[r for r in inv['rows'] if r['status']=='AUDITORIA']
