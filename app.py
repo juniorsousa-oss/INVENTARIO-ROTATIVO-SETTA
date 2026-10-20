@@ -1526,11 +1526,11 @@ elif active=='Inventário Rotativo':
         persist_inv(inv);st.rerun()
     x,y,z=st.columns(3)
     if x.button('RECONTAR TODOS OS DIVERGENTES',type='primary',use_container_width=True):
-     for r in inv['rows']:
+     for r in _document_scope_rows:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='RECONTAR'
      inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
     if y.button('AUDITAR TODOS OS DIVERGENTES',use_container_width=True):
-     for r in inv['rows']:
+     for r in _document_scope_rows:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
     _pending_analysis=[r for r in _document_scope_rows if r.get('status')!='FINALIZADO']
@@ -1589,11 +1589,11 @@ elif active=='Inventário Rotativo':
          persist_inv(inv);st.rerun()
     x,y,z=st.columns(3)
     if x.button('RECONTAR TODOS OS DIVERGENTES',type='primary',use_container_width=True):
-     for r in inv['rows']:
+     for r in _document_scope_rows:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='RECONTAR'
      inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
     if y.button('AUDITAR TODOS OS DIVERGENTES',use_container_width=True):
-     for r in inv['rows']:
+     for r in _document_scope_rows:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
     _pending_decisions=[r for r in _document_scope_rows if r.get('status')!='FINALIZADO']
