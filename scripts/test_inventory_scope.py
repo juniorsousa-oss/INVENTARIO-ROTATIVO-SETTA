@@ -43,7 +43,9 @@ assert classify_past_row({"codigo":"00000002"},exc,{"00000001"},{"00000002"})=="
 assert classify_past_row({"codigo":"00000006"},exc,{"00000001"},set())=="S2 NÃO COMPROVADO"
 assert classify_past_row({"codigo":"00000001"},exc,{"00000001"},set())=="S2"
 try:
- filter_s2_sources(an.drop(columns=["ARMZ"]),en,exc)
+ an_missing_armz=an.drop(columns=["ARMZ"]).copy()
+ an_missing_armz["OTHER"]=0
+ filter_s2_sources(an_missing_armz,en,exc)
 except ValueError as e:
  assert "ARMZ" in str(e)
 else:
