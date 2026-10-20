@@ -997,6 +997,7 @@ def sync_central_inventory(force=False):
    and isinstance(st.session_state.get('db'),pd.DataFrame)
    and isinstance(st.session_state.get('pos'),pd.DataFrame)
   ):
+   st.session_state['_inventory_scope_ready']=True
    return False
 
   # Depois de uma falha, não repete o processamento pesado a cada clique.
@@ -1699,12 +1700,32 @@ elif active=='Registro':
    except ValueError:pass
   return None
 
- # Dados completos dos inventários fechados são reutilizados pelo histórico
- # e pela carga de ajustes, sem misturar as contagens em andamento no Protheus.
+ # O histórico original permanece íntegro; não apuramos contagens fora do S2.
+ # Ajustes efetivados no Protheus NUNCA são revertidos por esta classificação.
+ _excluded_codes,_known_s2,_known_non_s2=_registry_scope_sets()
+ _scope_audit=[]
+ for _inv in _registry_docs:
+  for _row in _inv.get('rows',[]):
+   _reason=classify_past_row(_row,_excluded_codes,_known_s2,_known_non_s2)
+   if _reason!='S2':
+    _scope_audit.append({
+     'Documento':_inv.get('documento',''),
+     'Código':_row.get('codigo',''),
+     'Descrição':_row.get('descricao',''),
+     'Endereço':_row.get('endereco',''),
+     'Motivo':_reason,
+     'Status original':_row.get('status',''),
+     'Resultado original':_row.get('resultado_final',''),
+     'Contagens registradas':len(_row.get('contagens') or []),
+     'Ajuste autorizado':'SIM' if _row.get('ajuste_autorizado') else 'NÃO',
+     'Execução Protheus':_row.get('ajuste_status') or 'NÃO INFORMADA',
+    })
+ if not st.session_state.get('_inventory_scope_ready'):
+  st.warning('ESCOPO S2 AINDA NÃO SINCRONIZADO. RELATÓRIOS OPERACIONAIS E AJUSTES BLOQUEADOS.')
  rows=[]
  for inv in _registry_docs:
   if inv.get('status')!='FECHADO':continue
-  for r in inv.get('rows',[]):
+  for r in _valid_inventory_rows(inv) if st.session_state.get('_inventory_scope_ready') else []:
    _final=r.get('contagem_final')
    _ajuste_necessario=float(r.get('ajuste_necessario_qtd') or (diff(r,_final) if _final is not None else 0))
    rows.append({
@@ -1738,7 +1759,12 @@ elif active=='Registro':
  # Só a confirmação SIM dá baixa; NÃO continua listado até execução.
  ajustes=(df[df['Ajuste Autorizado'].eq('SIM') & df['Status Ajuste'].ne('REALIZADO')].copy()
           if not df.empty else pd.DataFrame())
- _count_records=build_count_rows(st.session_state.inventories)
+ _count_records=(build_count_rows(st.session_state.inventories)
+                 if st.session_state.get('_inventory_scope_ready') else [])
+ _count_records=[
+  item for item in _count_records
+  if is_in_scope(item,_excluded_codes,_known_s2,_known_non_s2)
+ ]
 
  tab_hist,tab_counts,tab_protheus=st.tabs([
   'HISTÓRICO DE INVENTÁRIOS','CONFERÊNCIA DE CONTAGENS','AJUSTES PROTHEUS'
@@ -1781,7 +1807,7 @@ elif active=='Registro':
   if _hist_visible:
    _history_summary=[]
    for _inv in _hist_visible:
-    _positions=_inv.get('rows') or []
+    _positions=_valid_inventory_rows(_inv)
     _history_summary.append({
      'Documento':str(_inv['documento']),
      'Data':str(_inv.get('data') or ''),
@@ -1790,6 +1816,7 @@ elif active=='Registro':
      'Produtos':len({str(r.get('codigo') or '') for r in _positions}),
      'Posições':len(_positions),
      'Contadas':sum(bool(r.get('contagens')) for r in _positions),
+     'Fora escopo':len(_inv.get('rows') or [])-len(_positions),
     })
    _setta_dataframe(pd.DataFrame(_history_summary),use_container_width=True,hide_index=True)
    _selected_doc=st.selectbox(
@@ -1801,7 +1828,7 @@ elif active=='Registro':
    if _detail_doc:
     with st.expander('VER ITENS, CONTAGENS E TRATATIVAS DO DOCUMENTO',expanded=False):
      _detail_rows=[]
-     for _item in _detail_doc.get('rows',[]):
+     for _item in _valid_inventory_rows(_detail_doc):
       _counts=_item.get('contagens') or []
       _detail_rows.append({
        'Código':_item.get('codigo',''),
@@ -1833,6 +1860,20 @@ elif active=='Registro':
       st.info('DOCUMENTO SEM ITENS REGISTRADOS.')
   else:
    st.info('NENHUM INVENTÁRIO CORRESPONDE AOS FILTROS SELECIONADOS.')
+
+  with st.expander(f'CONTAGENS FORA DO ESCOPO S2 · AUDITORIA ({len(_scope_audit)})',expanded=False):
+   st.caption('REGISTROS PRESERVADOS PARA RASTREABILIDADE. NÃO INTEGRAM ACURÁCIA, DEMANDA DE CONTAGEM NEM NOVAS CARGAS PROTHEUS.')
+   if _scope_audit:
+    _scope_audit_frame=pd.DataFrame(_scope_audit)
+    _setta_dataframe(_scope_audit_frame,use_container_width=True,hide_index=True)
+    st.download_button(
+     'EXPORTAR AUDITORIA DE CONTAGENS DESCONSIDERADAS',
+     excel_bytes(_scope_audit_frame,'FORA ESCOPO'),
+     file_name='auditoria_inventario_fora_s2.xlsx',
+     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     key='registry_scope_audit_download',use_container_width=True,
+    )
+   else:st.info('SEM REGISTROS FORA DO ESCOPO IDENTIFICADOS.')
 
   if not df.empty:
    _history_export=df.drop(columns=['ID Interno']).copy()
@@ -1901,7 +1942,9 @@ elif active=='Registro':
 
  with tab_protheus:
   section_band('03 · PROTHEUS','AJUSTES PENDENTES DE CONFIRMAÇÃO','SOMENTE INVENTÁRIOS FECHADOS COM AJUSTE AUTORIZADO')
-  if not ajustes.empty:
+  if not st.session_state.get('_inventory_scope_ready'):
+   st.error('VALIDAÇÃO S2 INDISPONÍVEL. EXPORTAÇÃO/CONFIRMAÇÃO PROTHEUS BLOQUEADAS.')
+  elif not ajustes.empty:
    _pending_docs=sorted(ajustes['Documento'].unique().tolist(),reverse=True)
    _filter_protheus=st.selectbox(
     'DOCUMENTO',['TODOS']+_pending_docs,key='registry_protheus_document',
