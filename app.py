@@ -1371,11 +1371,11 @@ elif active=='Inventário Rotativo':
      st.caption('Inconsistências abertas do Inventário Rotativo continuam sendo incluídas automaticamente.')
     x,y=st.columns(2)
     if not st.session_state.get('_inventory_scope_ready'):
-    st.error('ESCOPO S2 NÃO VALIDADO. NOVOS INVENTÁRIOS BLOQUEADOS ATÉ SINCRONIZAR ANALÍTICO E FECHAMENTO MENSAL.')
-   _scope_summary=st.session_state.get('_inventory_scope_stats') or {}
-   if _scope_summary.get('blocked_ambiguous_codes'):
-    st.warning(f"{_scope_summary['blocked_ambiguous_codes']} código(s) multi-armazém foram bloqueados porque ENDEREÇO não identifica ARMZ.")
-   if x.button('Criar inventário',type='primary',use_container_width=True,disabled=not bool(st.session_state.get('_inventory_scope_ready'))):
+     st.error('ESCOPO S2 NÃO VALIDADO. NOVOS INVENTÁRIOS BLOQUEADOS ATÉ SINCRONIZAR ANALÍTICO E FECHAMENTO MENSAL.')
+    _scope_summary=st.session_state.get('_inventory_scope_stats') or {}
+    if _scope_summary.get('blocked_ambiguous_codes'):
+     st.warning(f"{_scope_summary['blocked_ambiguous_codes']} código(s) multi-armazém foram bloqueados porque ENDEREÇO não identifica ARMZ.")
+    if x.button('Criar inventário',type='primary',use_container_width=True,disabled=not bool(st.session_state.get('_inventory_scope_ready'))):
      urgent_codes=sorted({str(rep.get('codigo')) for rep in st.session_state.reports.values() if rep.get('status')=='ABERTO' and rep.get('equipe')=='INVENTÁRIO ROTATIVO'})
      if selection_mode=='MANUAL':
       _priority=_eligible_priority_frame(st.session_state.db)
@@ -1763,7 +1763,7 @@ elif active=='Registro':
                  if st.session_state.get('_inventory_scope_ready') else [])
  _count_records=[
   item for item in _count_records
-  if is_in_scope(item,_excluded_codes,_known_s2,_known_non_s2)
+  if is_in_scope({'codigo':item['Código']},_excluded_codes,_known_s2,_known_non_s2)
  ]
 
  tab_hist,tab_counts,tab_protheus=st.tabs([
