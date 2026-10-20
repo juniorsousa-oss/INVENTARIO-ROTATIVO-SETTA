@@ -1,4 +1,4 @@
-import os, io, copy, pickle, sqlite3, tempfile, uuid, time
+import os, io, copy, pickle, sqlite3, tempfile, uuid, time, hashlib
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from PIL import Image
@@ -44,6 +44,7 @@ import central_inventory_data as central_data
 import setta_shell
 import setta_auth
 from inventory_reports import build_count_rows
+from inventory_scope import catalog_exclusions, filter_s2_sources, classify_past_row, is_in_scope, code as scope_code
 
 try:
  _GLOBAL_VISUAL_CONFIG=central_data.load_visual_config()
@@ -89,7 +90,7 @@ def now_local():
 # O shell é emitido antes de qualquer leitura remota operacional.
 setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
 
-BUILD_DIAGNOSTICO = 'inventory-20261016-almox-role-protheus-report'
+BUILD_DIAGNOSTICO = 'inventory-20261020-escopo-s2-fechamento'
 INVENTORY_DATA_EPOCH='20261007-RESET-01'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
@@ -638,6 +639,7 @@ def make_rows(sel,pos):
     'codigo':str(p.codigo),
     'descricao':str(p.descricao),
     'endereco':str(r.endereco),
+    'armazem':'S2',
     'qtd_sistema':float(r.quantidade),
     'valor_unitario':float(p.valor_unitario),
     'contagens':[],
@@ -911,14 +913,15 @@ def close_inv(inv):
 
 
 @st.cache_data(show_spinner=False,ttl=3600,max_entries=4)
-def _cached_inventory_snapshot(analitico_token,endereco_token):
- # Os tokens entram na chave do cache. Quando qualquer fonte muda,
- # somente a nova combinação é processada novamente.
+def _cached_inventory_snapshot(analitico_token,endereco_token,scope_codes):
+ # Integração obrigatória: ARMZ S2 no ANALÍTICO e códigos de chapas e
+ # barramentos do catálogo do Fechamento Mensal. Falhas bloqueiam criação.
  an,_=central_data.download_source_frame('analitico',analitico_token,header=1)
  en,_=central_data.download_source_frame('endereco',endereco_token,header=1)
- eligible=eligible_addresses_from_frame(en)
- db,pos=build_db(an,en,eligible)
- return an,en,db,pos,eligible
+ an_s2,en_s2,scope_stats=filter_s2_sources(an,en,scope_codes)
+ eligible=eligible_addresses_from_frame(en_s2)
+ db,pos=build_db(an_s2,en_s2,eligible)
+ return an,en,db,pos,eligible,scope_stats
 
 def _load_inventory_fallback():
  # Primeiro tenta o cache local, que é imediato. Firestore só é consultado
@@ -980,7 +983,12 @@ def sync_central_inventory(force=False):
    metas[key]=meta
    tokens[key]=central_data.source_token(meta)
 
-  session_token=tokens['analitico']+'||'+tokens['endereco']
+  scope_info=central_data.inventory_scope_catalog()
+  scope_codes=tuple(sorted(catalog_exclusions(scope_info.get('excluded_codes') or [])))
+  scope_hash=hashlib.sha256('|'.join(scope_codes).encode('utf-8')).hexdigest()[:16]
+  session_token=tokens['analitico']+'||'+tokens['endereco']+'||'+scope_hash
+  st.session_state['_inventory_scope_catalog']=scope_info
+  st.session_state['_inventory_scope_ready']=False
 
   # Se esta sessão já está com a mesma versão, não faz rede/processamento.
   if (
@@ -1010,9 +1018,11 @@ def sync_central_inventory(force=False):
    ):
     needs_commit=True
 
-  an,en,db,pos,eligible=_cached_inventory_snapshot(
-   tokens['analitico'],tokens['endereco']
+  an,en,db,pos,eligible,scope_stats=_cached_inventory_snapshot(
+   tokens['analitico'],tokens['endereco'],scope_codes
   )
+  st.session_state['_inventory_scope_stats']=scope_stats
+  st.session_state['_inventory_scope_ready']=True
   st.session_state.an_df=an
   st.session_state.en_df=en
   st.session_state.db=db
@@ -1040,6 +1050,7 @@ def sync_central_inventory(force=False):
   st.session_state['_central_inventory_success']='ANALÍTICO · ENDEREÇO'
   return True
  except Exception as exc:
+  st.session_state['_inventory_scope_ready']=False
   st.session_state['_central_inventory_error']=str(exc)
   try:
    bundle=central_data.bundle_state()
@@ -1238,13 +1249,25 @@ else:
  st.session_state['_inventory_last_page']=active
 
 
+def _registry_scope_sets():
+ meta=st.session_state.get('_inventory_scope_catalog') or {}
+ excluded=catalog_exclusions(meta.get('excluded_codes') or [])
+ historical_s2={scope_code(c) for c in meta.get('historical_s2_codes') or []}
+ current_s2=set(st.session_state.db.codigo.astype(str)) if isinstance(st.session_state.get('db'),pd.DataFrame) else set()
+ historical_non_s2={scope_code(c) for c in meta.get('historical_non_s2_codes') or []}
+ return excluded,historical_s2|current_s2,historical_non_s2-current_s2
+
+def _valid_inventory_rows(inv):
+ excluded,s2_codes,non_s2=_registry_scope_sets()
+ return [r for r in inv.get('rows',[]) if is_in_scope(r,excluded,s2_codes,non_s2)]
+
 # Dashboard
 if active=='Dashboard':
  st.markdown('<div class="section-title">DASHBOARD OPERACIONAL</div>',unsafe_allow_html=True)
  section_band('01 · VISÃO GERAL','INDICADORES DO ESTOQUE')
  if st.session_state.db is None:st.info('Aguardando sincronização automática das fontes ANALÍTICO e ENDEREÇO pela API.')
  else:
-  db=st.session_state.db;items=int((db.saldo_apto>0).sum());valor_apto=float(db.valor_total.sum());rr=[r for x in st.session_state.inventories.values() for r in x['rows']];cnt=[r for r in rr if r['contagens']];div=[r for r in cnt if abs(diff(r,last(r)))>1e-9]
+  db=st.session_state.db;items=int((db.saldo_apto>0).sum());valor_apto=float(db.valor_total.sum());rr=[r for x in st.session_state.inventories.values() for r in _valid_inventory_rows(x)];cnt=[r for r in rr if r['contagens']];div=[r for r in cnt if abs(diff(r,last(r)))>1e-9]
   qtd_cnt=len(cnt);qtd_div=len(div);acc_itens=(100-(qtd_div/items*100)) if items else 100.0;acc_pos=(100-(qtd_div/qtd_cnt*100)) if qtd_cnt else 100.0
   dashboard_kpi_grid(items,valor_apto,qtd_cnt,qtd_div,acc_itens,acc_pos)
   topic_divider();section_band('02 · INDICADORES','ACOMPANHAMENTO DOS INVENTÁRIOS')
@@ -1280,8 +1303,9 @@ if active=='Dashboard':
     inv_perf=[]
     _closed_history=[x for x in st.session_state.inventories.values() if x.get('status')=='FECHADO']
     for x in sorted(_closed_history,key=lambda z:z.get('criado_em',''),reverse=True)[:8]:
-     total=sum(1 for r in x.get('rows',[]) if r.get('contagens'))
-     dv=sum(1 for r in x.get('rows',[]) if r.get('contagens') and abs(diff(r,last(r)))>1e-9)
+     _valid_rows=_valid_inventory_rows(x)
+     total=sum(1 for r in _valid_rows if r.get('contagens'))
+     dv=sum(1 for r in _valid_rows if r.get('contagens') and abs(diff(r,last(r)))>1e-9)
      if total:
       inv_perf.append({
        'Inventário':x.get('documento',''),
@@ -1345,7 +1369,12 @@ elif active=='Inventário Rotativo':
      manual_codes=[_manual_map[x] for x in _manual_labels]
      st.caption('Inconsistências abertas do Inventário Rotativo continuam sendo incluídas automaticamente.')
     x,y=st.columns(2)
-    if x.button('Criar inventário',type='primary',use_container_width=True):
+    if not st.session_state.get('_inventory_scope_ready'):
+    st.error('ESCOPO S2 NÃO VALIDADO. NOVOS INVENTÁRIOS BLOQUEADOS ATÉ SINCRONIZAR ANALÍTICO E FECHAMENTO MENSAL.')
+   _scope_summary=st.session_state.get('_inventory_scope_stats') or {}
+   if _scope_summary.get('blocked_ambiguous_codes'):
+    st.warning(f"{_scope_summary['blocked_ambiguous_codes']} código(s) multi-armazém foram bloqueados porque ENDEREÇO não identifica ARMZ.")
+   if x.button('Criar inventário',type='primary',use_container_width=True,disabled=not bool(st.session_state.get('_inventory_scope_ready'))):
      urgent_codes=sorted({str(rep.get('codigo')) for rep in st.session_state.reports.values() if rep.get('status')=='ABERTO' and rep.get('equipe')=='INVENTÁRIO ROTATIVO'})
      if selection_mode=='MANUAL':
       _priority=_eligible_priority_frame(st.session_state.db)
