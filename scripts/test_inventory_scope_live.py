@@ -12,6 +12,8 @@ from inventory_scope import catalog_exclusions, filter_s2_sources, classify_past
 an,_=download_source_frame("analitico","s2-smoke",header=1)
 en,_=download_source_frame("endereco","s2-smoke",header=1)
 scope=inventory_scope_catalog()
+assert len(scope.get("historical_s2_codes") or []) >= 4000, "Catálogo S2 histórico foi truncado"
+assert len(scope.get("historical_non_s2_codes") or []) >= 100, "Outros armazéns não foram carregados por completo"
 exclusions=catalog_exclusions(scope["excluded_codes"])
 s2_an,s2_en,info=filter_s2_sources(an,en,exclusions)
 assert not s2_an.empty, "Analítico S2 vazio"
