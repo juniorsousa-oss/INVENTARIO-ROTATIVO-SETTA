@@ -285,6 +285,17 @@ def download_derived(base_key: str, version_token: str = "") -> tuple[pd.DataFra
 
 
 
+@st.cache_data(show_spinner=False, ttl=120, max_entries=2)
+def inventory_scope_catalog() -> dict:
+    """Catálogo comum com o Fechamento Mensal (somente metadados de escopo)."""
+    data = api_call("inventory_scope_catalog", timeout=35).get("data") or {}
+    if int(data.get("version") or 0) < 2:
+        raise RuntimeError("API de escopo S2 desatualizada.")
+    if not isinstance(data.get("excluded_codes"), list):
+        raise RuntimeError("Catálogo de chapas e barras indisponível.")
+    return data
+
+
 @st.cache_data(show_spinner=False, ttl=3600, max_entries=4)
 def download_source(source_key: str, version_token: str) -> tuple[bytes, dict]:
     del version_token
