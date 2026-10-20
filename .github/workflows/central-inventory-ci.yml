@@ -28,7 +28,7 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
       - name: Compilar
-        run: python -m py_compile app.py central_inventory_data.py inventory_reports.py setta_shell.py setta_auth.py scripts/validate_base.py scripts/test_inventory_reports.py scripts/test_inventory_decision.py
+        run: python -m py_compile app.py central_inventory_data.py inventory_reports.py inventory_scope.py setta_shell.py setta_auth.py scripts/validate_base.py scripts/test_inventory_reports.py scripts/test_inventory_decision.py scripts/test_inventory_scope.py scripts/test_inventory_scope_live.py
       - name: Validar baseline
         run: python scripts/validate_base.py
       - name: Testar prioridade de contagens
@@ -37,6 +37,10 @@ jobs:
         run: python scripts/test_inventory_reports.py
       - name: Testar fechamento após recontagem
         run: python scripts/test_inventory_decision.py
+      - name: Validar contrato S2 por amostra
+        run: python scripts/test_inventory_scope.py
+      - name: Validar escopo nas fontes reais da Central
+        run: python scripts/test_inventory_scope_live.py
       - name: Validar integração
         run: |
           python - <<'PY'
