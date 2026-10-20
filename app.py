@@ -840,11 +840,19 @@ def divergência(r,q):return abs(divergencia_valor(r,q))
 def sev(v):return 'BAIXO' if v<=100 else 'MÉDIO' if v<=1000 else 'ALTO'
 
 def close_inv(inv):
+ if not st.session_state.get('_inventory_scope_ready'):
+  st.session_state['_inventory_close_error']='ESCOPO S2 NÃO VALIDADO. ATUALIZE AS FONTES ANTES DE ENCERRAR.'
+  return False
  if not _can_manage_inventory():
   st.session_state['_inventory_close_error']='AUTENTIQUE UM GESTOR OU ALMOXARIFADO PARA AUTORIZAR O ENCERRAMENTO.'
   return False
  doc=str(inv.get('documento') or '').strip()
  pendentes=[r for r in inv.get('rows',[]) if r.get('status')!='FINALIZADO']
+ _valid_rows=_valid_inventory_rows(inv)
+ pendentes=[r for r in pendentes if r in _valid_rows]
+ if not _valid_rows:
+  st.session_state['_inventory_close_error']='NENHUMA POSIÇÃO PERTENCENTE AO S2. REVISE O INVENTÁRIO EM VEZ DE ENCERRAR.'
+  return False
  if pendentes:
   st.session_state['_inventory_close_error']=(
    f'{len(pendentes)} posição(ões) ainda precisam de análise: '
@@ -858,14 +866,14 @@ def close_inv(inv):
  before_reports=copy.deepcopy(st.session_state.reports)
 
  try:
-  for r in inv['rows']:
+  for r in _valid_rows:
    if r['contagem_final'] is None:r['contagem_final']=last(r)
    if not r['resultado_final']:r['resultado_final']='ENCERRADO PELO GESTOR'
    r['status']='FINALIZADO'
 
   cycle_codes=[]
   if not inv.get('ciclo_marcado'):
-   cycle_codes=sorted({str(r['codigo']) for r in inv['rows'] if r['contagens']})
+   cycle_codes=sorted({str(r['codigo']) for r in _valid_rows if r['contagens']})
    for code in cycle_codes:
     st.session_state.cycles[code]=int(st.session_state.cycles.get(code,0))+1
    inv['ciclo_marcado']=True
@@ -879,7 +887,7 @@ def close_inv(inv):
    if rep.get('status')=='ABERTO' and any(
     str(r['codigo'])==str(rep.get('codigo'))
     and str(r['endereco'])==str(rep.get('endereco'))
-    for r in inv['rows']
+    for r in _valid_rows
    ):
     rep['status']='ENCERRADO'
     rep['inventario_doc']=doc
@@ -1420,7 +1428,7 @@ elif active=='Inventário Rotativo':
   def render_inventory_cards(items):
    for inv in items:
     with st.container(border=True):
-     s=len(inv['rows']);prod=len({r['codigo'] for r in inv['rows']});a,b,c,d=st.columns([2.2,1.5,1,1]);a.markdown(f'**{inv["documento"]}**');a.caption(f'Ciclo {inv["ciclo"]} · {inv["data"]}');b.write(f'**{inv["status"]}**');c.metric('Produtos',prod);d.metric('Posições',s)
+     _card_rows=_valid_inventory_rows(inv);s=len(_card_rows);prod=len({r['codigo'] for r in _card_rows});a,b,c,d=st.columns([2.2,1.5,1,1]);a.markdown(f'**{inv["documento"]}**');a.caption(f'Ciclo {inv["ciclo"]} · {inv["data"]}');b.write(f'**{inv["status"]}**');c.metric('Produtos',prod);d.metric('Posições',s)
      _show_delete=_can_manage_inventory() and inv.get('status')!='FECHADO'
      _open_col,_delete_col=st.columns(2) if _show_delete else (st.container(),None)
      if _open_col.button('ABRIR',key='op_'+inv['documento'],use_container_width=True):
@@ -1460,10 +1468,14 @@ elif active=='Inventário Rotativo':
   doc=st.session_state.selected
   if doc in st.session_state.inventories:
    inv=st.session_state.inventories[doc];st.divider();st.markdown(f'### Inventário {doc} — {inv["status"]}')
+   _document_scope_rows=_valid_inventory_rows(inv)
+   _removed_scope=len(inv.get('rows',[]))-len(_document_scope_rows)
+   if _removed_scope:
+    st.info(f'{_removed_scope} posição(ões) do documento estão FORA DO ESCOPO S2 e não entram na apuração. O histórico permanece preservado em Registros > Histórico > Auditoria.')
    prof=_session_profile()
    if prof in {'Operador','Almoxarifado'} and inv['status']=='EM CONTAGEM':
-    total_pos=len(inv['rows'])
-    counted_pos=sum(1 for r in inv['rows'] if r['contagens'])
+    total_pos=len(_document_scope_rows)
+    counted_pos=sum(1 for r in _document_scope_rows if r['contagens'])
     pending_pos=total_pos-counted_pos
     p1,p2,p3=st.columns(3)
     p1.metric('POSIÇÕES',total_pos)
@@ -1483,7 +1495,7 @@ elif active=='Inventário Rotativo':
     else:
      st.info(f'Faltam {pending_pos} posição(ões) para liberar a finalização.')
 
-    for r in inv['rows']:
+    for r in _document_scope_rows:
      if r['contagens']:continue
      with st.container(border=True):
       a,b,c=st.columns([1.1,3,1.3]);a.markdown(f'**{r["codigo"]}**');b.write(f'{r["descricao"]}\n\n**Endereço:** {r["endereco"]}');c.write('**Qtd. sistema:** OCULTA' if inv['blind_count'] else f'**Qtd. sistema:** {fn(r["qtd_sistema"])}');x,y=st.columns([1,2]);q=x.number_input('Contagem',0.0,step=.001,format='%.3f',key='q1_'+r['id']);cm=y.text_input('Comentário (opcional)',key='cm1_'+r['id'])
@@ -1494,14 +1506,14 @@ elif active=='Inventário Rotativo':
    elif _can_manage_inventory() and inv['status']=='AGUARDANDO ANÁLISE':
     st.markdown('#### Análise da 1ª contagem')
     # 1ª contagem: igual ao sistema confirma; divergente segue para decisão.
-    for r in inv['rows']:
+    for r in _document_scope_rows:
      if not r['contagens'] or r['status']=='FINALIZADO':
       continue
      q=last(r)
      if abs(diff(r,q))<1e-9:
       r['contagem_final']=q;r['resultado_final']='SISTEMA CONFIRMADO';r['status']='FINALIZADO'
     persist_inv(inv)
-    divs=[r for r in inv['rows'] if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9]
+    divs=[r for r in _document_scope_rows if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9]
     if not divs: st.success('Não existem divergências na 1ª contagem. Todos os itens foram confirmados pelo sistema.')
     for r in divs:
      with st.container(border=True):
@@ -1521,7 +1533,7 @@ elif active=='Inventário Rotativo':
      for r in inv['rows']:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
-    _pending_analysis=[r for r in inv['rows'] if r.get('status')!='FINALIZADO']
+    _pending_analysis=[r for r in _document_scope_rows if r.get('status')!='FINALIZADO']
     if _pending_analysis:
      st.warning(
       f'ENCERRAMENTO BLOQUEADO: {len(_pending_analysis)} posição(ões) aguardando análise. '
@@ -1535,18 +1547,18 @@ elif active=='Inventário Rotativo':
       st.error(st.session_state.get('_inventory_close_error') or st.session_state.get('_operational_persistence_error') or 'Não foi possível encerrar o inventário. A operação foi revertida.')
    elif prof in {'Operador','Almoxarifado'} and inv['status']=='AGUARDANDO RECONTAGEM':
     st.markdown('#### Recontagem — itens liberados pelo gestor')
-    targets=[r for r in inv['rows'] if r['status']=='RECONTAR']
+    targets=[r for r in _document_scope_rows if r['status']=='RECONTAR']
     for r in targets:
      with st.container(border=True):
       st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(r['descricao']);st.caption('Histórico: '+' → '.join(f"{x['etapa']}: {fn(x['quantidade'])}" for x in r['contagens']));q=st.number_input('Nova contagem',0.0,step=.001,format='%.3f',key='q2_'+r['id']);cm=st.text_input('Comentário (opcional)',key='cm2_'+r['id'])
       if st.button('Salvar nova contagem',key='sv2_'+r['id'],type='primary'):addcount(r,q,cm,f'{len(r["contagens"])+1}ª CONTAGEM');r['status']='RECONTADA';persist_inv(inv);st.rerun()
-    if not any(r['status']=='RECONTAR' for r in inv['rows']):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
+    if not any(r['status']=='RECONTAR' for r in _document_scope_rows):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
    elif _can_manage_inventory() and inv['status']=='AGUARDANDO DECISÃO':
     st.markdown('#### Avaliação após cada recontagem')
     # Mesma regra para 2ª, 3ª e todas as contagens seguintes.
     # Não ocultar recontagens que eliminaram a divergência: ainda não foram finalizadas.
-    candidates=_decision_candidates(inv)
-    if not candidates and not any(r.get('status')!='FINALIZADO' for r in inv['rows']):
+    candidates=_decision_candidates({'rows':_document_scope_rows})
+    if not candidates and not any(r.get('status')!='FINALIZADO' for r in _document_scope_rows):
      st.success('Não existem itens pendentes de decisão.')
     for r in candidates:
      q2=last(r);q1=r['contagens'][-2]['quantidade'] if len(r['contagens'])>=2 else None
@@ -1584,7 +1596,7 @@ elif active=='Inventário Rotativo':
      for r in inv['rows']:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
-    _pending_decisions=[r for r in inv['rows'] if r.get('status')!='FINALIZADO']
+    _pending_decisions=[r for r in _document_scope_rows if r.get('status')!='FINALIZADO']
     if _pending_decisions:
      st.warning(
       f'ENCERRAMENTO BLOQUEADO: {len(_pending_decisions)} posição(ões) aguardando conclusão. '
@@ -1598,12 +1610,12 @@ elif active=='Inventário Rotativo':
       st.error(st.session_state.get('_inventory_close_error') or st.session_state.get('_operational_persistence_error') or 'Não foi possível encerrar o inventário. A operação foi revertida.')
    elif _can_manage_inventory() and inv['status']=='AGUARDANDO AUDITORIA':
     st.markdown('#### Auditoria / 3ª ou próxima contagem')
-    targets=[r for r in inv['rows'] if r['status']=='AUDITORIA']
+    targets=[r for r in _document_scope_rows if r['status']=='AUDITORIA']
     for r in targets:
      with st.container(border=True):
       st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(r['descricao']);st.caption('Histórico: '+' → '.join(f"{x['etapa']}: {fn(x['quantidade'])}" for x in r['contagens']));q=st.number_input('Contagem de auditoria',0.0,step=.001,format='%.3f',key='q3_'+r['id']);cm=st.text_input('Comentário (opcional)',key='cm3_'+r['id'])
       if st.button('Salvar auditoria',key='sv3_'+r['id'],type='primary'):addcount(r,q,cm,'AUDITORIA');r['status']='AUDITADA';persist_inv(inv);st.rerun()
-    if not any(r['status']=='AUDITORIA' for r in inv['rows']):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
+    if not any(r['status']=='AUDITORIA' for r in _document_scope_rows):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
    elif _can_manage_inventory() and inv['status']=='FECHADO':
     st.success('Inventário encerrado e salvo no registro.');
     if st.button('Reabrir análise'):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
