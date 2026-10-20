@@ -114,6 +114,32 @@ A carga **Ajustes Protheus** continua exclusiva de documentos FECHADOS com
 `ajuste_autorizado=true` e ajuste ainda não confirmado como REALIZADO.
 Divergências **ENCERRADAS SEM AJUSTE** não integram essa carga.
 
+## Escopo do Inventário Rotativo — somente S2
+
+O Inventário Rotativo não deve substituir o fechamento específico de chapas e
+barramentos. O universo elegível é extraído em tempo de execução do
+**ANALÍTICO** e do **ENDEREÇO**, obrigatoriamente com **ARMZ = S2**.
+Produtos acabados (`TP = PA`) são excluídos. A tabela
+`fm_cb_catalogo` do aplicativo **FECHAMENTO-MENSAL** é consultada por meio
+da API `setta-data-api`: códigos ativos categorizados `CHAPA` ou
+`BARRA_COBRE`, mesmo candidatos, não entram na fila de inventário.
+
+Se a origem não informar ARMZ/TP, ou a API do catálogo estiver indisponível,
+a geração de novos inventários é bloqueada em vez de aceitar dados de outro
+armazém. Caso o ENDEREÇO não informe ARMZ, códigos de múltiplos armazéns
+são deixados em quarentena até que a vinculação seja validada.
+
+Contagens históricas fora do escopo deixam de compor os indicadores, as
+conferências operacionais e novas cargas de ajuste, mas continuam íntegras
+em **Registros → Histórico → Contagens fora do escopo S2 / Auditoria**.
+Itens sem vínculo seguro são sinalizados para conferência. Nenhum lançamento
+que já conste como REALIZADO no Protheus é revertido automaticamente.
+Inventários antigos podem ser concluídos apenas com suas posições elegíveis
+do S2, preservando as demais como evidência histórica.
+
+O controle de prioridade de ciclos continua limitado aos códigos válidos,
+sem contagem dupla com o Fechamento Mensal.
+
 ## Horário
 
 Eventos criados pelo app utilizam explicitamente `America/Sao_Paulo`. Datas ISO são armazenadas para ordenação/auditoria e formatadas em PT-BR na interface.
