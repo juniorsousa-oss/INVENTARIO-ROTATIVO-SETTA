@@ -41,6 +41,8 @@ jobs:
         run: python scripts/test_inventory_scope.py
       - name: Validar escopo nas fontes reais da Central
         run: python scripts/test_inventory_scope_live.py
+      - name: Descartar posições sem saldo antes do inventário
+        run: python scripts/test_endereco_sem_saldo.py
       - name: Validar integração
         run: |
           python - <<'PY'
