@@ -566,14 +566,16 @@ def brl(v):return f'R$ {float(v):,.2f}'.replace(',','X').replace('.',',').replac
 
 def eligible_addresses_from_frame(endereco_df):
  if endereco_df is None or endereco_df.empty:return []
- addresses=sorted([x for x in naddr(endereco_df.iloc[:,3]).unique() if x])
+ # Apenas enderecos com saldo fisico positivo entram no seletor.
+ quantidades=nums(endereco_df.iloc[:,7])
+ addresses=sorted([x for x in naddr(endereco_df.loc[quantidades>0].iloc[:,3]).unique() if x])
  blocked={naddr(pd.Series([x])).iloc[0] for x in ESTOQUE_ENDERECOS_NAO_DISPONIVEIS}
  return [x for x in addresses if x not in blocked]
 
 def build_db(an,end,eligible):
  a=an.iloc[:,[0,3,7,10]].copy();a.columns=['codigo','descricao','qtd_analitico','valor_k'];a['codigo']=ncode(a.codigo);a['descricao']=a.descricao.astype('string').fillna('').str.strip();a['qtd_analitico']=nums(a.qtd_analitico);a['valor_k']=nums(a.valor_k)
  a=a.groupby('codigo',as_index=False).agg(descricao=('descricao','first'),qtd_analitico=('qtd_analitico','sum'),valor_k=('valor_k','sum'));_den=a['qtd_analitico'].where(a['qtd_analitico'].abs()>1e-12);a['valor_unitario']=(a['valor_k']/_den).fillna(0.0)
- e=end.iloc[:,[0,3,7]].copy();e.columns=['codigo','endereco','quantidade'];e['codigo']=ncode(e.codigo);e['endereco']=naddr(e.endereco);e['quantidade']=nums(e.quantidade);e=e.groupby(['codigo','endereco'],as_index=False).quantidade.sum(); ap=set(naddr(pd.Series(eligible)).tolist());e['apto']=e.endereco.isin(ap)
+ e=end.iloc[:,[0,3,7]].copy();e.columns=['codigo','endereco','quantidade'];e['codigo']=ncode(e.codigo);e['endereco']=naddr(e.endereco);e['quantidade']=nums(e.quantidade);e=e.groupby(['codigo','endereco'],as_index=False).quantidade.sum();e=e[e.quantidade.ne(0)].reset_index(drop=True); ap=set(naddr(pd.Series(eligible)).tolist());e['apto']=e.endereco.isin(ap)
  saldo=e[e.apto].groupby('codigo',as_index=False).quantidade.sum().rename(columns={'quantidade':'saldo_apto'});d=a.merge(saldo,on='codigo',how='outer');d.saldo_apto=d.saldo_apto.fillna(0.0);d.qtd_analitico=d.qtd_analitico.fillna(0.0);d.valor_k=d.valor_k.fillna(0.0);d.valor_unitario=d.valor_unitario.fillna(0.0);d.descricao=d.descricao.fillna('SEM DESCRIÇÃO NO ESTOQUE ANALÍTICO');d['valor_total']=d.saldo_apto*d.valor_unitario;act=(d.saldo_apto>0)&(d.valor_unitario>0);d['classificacao_r_un']=pd.NA;d['classificacao_r_total']=pd.NA;d.loc[act,'classificacao_r_un']=d.loc[act].valor_unitario.rank(method='first',ascending=False).astype(int);d.loc[act,'classificacao_r_total']=d.loc[act].valor_k.rank(method='first',ascending=False).astype(int);d=d.sort_values(['classificacao_r_total','codigo'],na_position='last').reset_index(drop=True);e=e.merge(d[['codigo','valor_unitario']],on='codigo',how='left');return d,e
 
 def nextdoc():
@@ -633,7 +635,7 @@ def select_products(db,n,urgent_codes=None):
 def make_rows(sel,pos):
  rows=[]
  for _,p in sel.iterrows():
-  for _,r in pos[(pos.codigo==p.codigo)&pos.apto].iterrows():
+  for _,r in pos[(pos.codigo==p.codigo)&pos.apto&pos.quantidade.gt(0)].iterrows():
    rows.append({
     'id':uuid.uuid4().hex[:12],
     'codigo':str(p.codigo),
