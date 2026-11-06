@@ -1,5 +1,8 @@
 """Testa filtragem de posições inativas no carregamento do Inventário SETTA."""
 import pandas as pd
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from central_inventory_data import filtrar_enderecos_zerados
 from pathlib import Path
 
