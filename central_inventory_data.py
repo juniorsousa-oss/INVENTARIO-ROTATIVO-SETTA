@@ -308,6 +308,23 @@ def download_source(source_key: str, version_token: str) -> tuple[bytes, dict]:
     return response.content, meta
 
 
+def filtrar_enderecos_zerados(frame: pd.DataFrame, source_key: str) -> pd.DataFrame:
+    """Enderecos fisicos com saldo zero nao sao posicoes para inventario.
+
+    Preserva a fonte bruta na Central e so descarta registros zerados quando
+    o consumidor INVENTARIO carrega a fonte normalizada ou seu Excel.
+    """
+    if source_key != "endereco" or frame.empty or frame.shape[1] < 8:
+        return frame
+    # O relatorio ENDERECO usa H = Quantidade. Virgula e ponto decimais
+    # precisam ser aceitos, sem transformar dados invalidos em saldo zero.
+    quantidades = pd.to_numeric(
+        frame.iloc[:, 7].astype(str).str.strip().str.replace(",", ".", regex=False),
+        errors="coerce",
+    )
+    return frame.loc[quantidades.isna() | quantidades.ne(0)].reset_index(drop=True)
+
+
 @st.cache_data(show_spinner=False, ttl=3600, max_entries=4)
 def download_source_frame(
     source_key: str,
@@ -356,18 +373,16 @@ def download_source_frame(
 
         frame = raw.iloc[header + 1 :].reset_index(drop=True).copy()
         frame.columns = columns
-        return frame, meta
+        return filtrar_enderecos_zerados(frame, source_key), meta
     except Exception:
         raw, meta = download_source(source_key, "")
-        return (
-            pd.read_excel(
-                io.BytesIO(raw),
-                sheet_name=0,
-                header=header,
-                dtype=str,
-            ),
-            meta,
+        frame = pd.read_excel(
+            io.BytesIO(raw),
+            sheet_name=0,
+            header=header,
+            dtype=str,
         )
+        return filtrar_enderecos_zerados(frame, source_key), meta
 
 
 @st.cache_data(show_spinner=False, ttl=30, max_entries=2)
