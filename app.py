@@ -44,6 +44,10 @@ import central_inventory_data as central_data
 import setta_shell
 import setta_auth
 from inventory_reports import build_count_rows
+from inventory_stock_reports import (
+    build_stock_reports, exportar_excel, GERAL_CONFERENCIA, GERAL_AUDITORIA,
+    ENDERECOS_COLS, NAO_ENDERECADOS,
+)
 from inventory_scope import catalog_exclusions, filter_s2_sources, classify_past_row, is_in_scope, code as scope_code
 
 try:
@@ -1661,20 +1665,123 @@ elif active=='Banco de Dados':
    )
 
    topic_divider()
-   section_band('02 · RELATÓRIO','ESTOQUE TRATADO')
-   _view=_treated.copy()
-   _rename={
-    'COD_MATERIAL':'CÓDIGO',
-    'DESCRICAO':'DESCRIÇÃO',
-    'SALDO_EM_ESTOQUE':'SALDO EM ESTOQUE',
-    'SALDO_NAO_DISPONIVEL':'SALDO NÃO DISPONÍVEL',
-    'SALDO_DISPONIVEL':'SALDO DISPONÍVEL',
-   }
-   _view=_view.rename(columns=_rename)
-   for _col in ['SALDO EM ESTOQUE','SALDO NÃO DISPONÍVEL','SALDO DISPONÍVEL']:
-    if _col in _view.columns:_view[_col]=pd.to_numeric(_view[_col],errors='coerce').fillna(0).map(fn)
-   _setta_dataframe(_view,use_container_width=True,hide_index=True,height=560)
-   st.caption('REGRA DE DISPONIBILIDADE IDÊNTICA AO RELATÓRIO ESTOQUE TRATADO. NÃO HÁ EDIÇÃO, IMPORTAÇÃO OU SELEÇÃO MANUAL NESTA TELA.')
+   section_band('02 · FILTROS E RELATÓRIOS','ESTOQUE POR ARMAZÉM')
+
+   # Reutiliza as fontes originais de mesma versão da Central. O estoque
+   # tratado agrega código; precisamos do ANALÍTICO e ENDEREÇO para recuperar
+   # armazém e valor unitário sem inventar um rateio entre depósitos.
+   _an=st.session_state.get('an_df')
+   _en=st.session_state.get('en_df')
+   if not isinstance(_an,pd.DataFrame) or not isinstance(_en,pd.DataFrame):
+    _bundle=st.session_state.get('_central_inventory_bundle') or central_data.bundle_state()
+    _an,_=central_data.download_source_frame(
+     'analitico',central_data.source_token(_bundle.get('analitico') or {}),header=1
+    )
+    _en,_=central_data.download_source_frame(
+     'endereco',central_data.source_token(_bundle.get('endereco') or {}),header=1
+    )
+
+   # Sempre que possível, histórico remoto consolidado (múltiplos
+   # operadores); a contagem por ciclo é insuficiente para recontagens.
+   try:
+    _history=central_data.operational_state(['inventories']).get('inventories') or {}
+    if not isinstance(_history,dict):
+     raise ValueError('Histórico de inventários inválido.')
+   except Exception:
+    st.warning(
+     'Não foi possível carregar o histórico consolidado de contagens. '
+     'As quantidades e datas de contagem serão obtidas do estado local '
+     'desta sessão e podem estar desatualizadas.'
+    )
+    _history=st.session_state.get('inventories') or {}
+
+   _armz_options=sorted({
+    str(x).strip().upper().removesuffix('.0')
+    for x in _an.iloc[:,6].dropna().tolist()
+    if str(x).strip()
+   })
+   _selected_warehouse=st.selectbox(
+    'ARMAZÉM',
+    options=['TODOS']+_armz_options,
+    format_func=lambda x:'Todos os armazéns' if x=='TODOS' else f'Armazém {x}',
+    key='estoque_relatorio_armazem',
+    help='Aplica o armazém às duas abas dos relatórios e recalcula os rankings.',
+   )
+   _stock=build_stock_reports(
+    _treated,_an,_en,_history,
+    ESTOQUE_ENDERECOS_NAO_DISPONIVEIS,
+    armazem=_selected_warehouse,
+   )
+   _conf=_stock['conferencia']
+   _audit=_stock['auditoria']
+   _pos=_stock['enderecos']
+   _c1,_c2,_c3=st.columns(3)
+   _c1.metric('PRODUTOS / ARMAZÉNS',f"{len(_conf):,}".replace(',','.'))
+   _c2.metric('SALDO DISPONÍVEL',fn(_stock['saldo_disponivel_total']))
+   _c3.metric('POSIÇÕES NÃO ENDEREÇADAS',f"{_stock['nao_enderecados']:,}".replace(',','.'))
+   for _warning in _stock['avisos']:
+    st.warning(_warning)
+   if _stock['divergencias_central']:
+    st.error(
+     'A abertura por armazém não concilia integralmente com o saldo oficial '
+     'do ESTOQUE TRATADO. Os valores exibidos são os das fontes originais, '
+     'sem correções artificiais; confirme a versão das fontes na Central.'
+    )
+   _tab_geral,_tab_end=st.tabs(['ESTOQUE GERAL','ESTOQUE POR ENDEREÇO'])
+   with _tab_geral:
+    _setta_dataframe(
+     _conf,use_container_width=True,hide_index=True,height=560,
+     column_config={
+      'Valor Unitário':st.column_config.NumberColumn(format='R$ %.2f'),
+      'Valor em Estoque':st.column_config.NumberColumn(format='R$ %.2f'),
+      'Saldo em Estoque':st.column_config.NumberColumn(format='%.3f'),
+      'Saldo Não Disponível':st.column_config.NumberColumn(format='%.3f'),
+      'Saldo Disponível':st.column_config.NumberColumn(format='%.3f'),
+     },
+    )
+   with _tab_end:
+    _setta_dataframe(
+     _pos,use_container_width=True,hide_index=True,height=560,
+     column_config={
+      'Quantidade no Endereço':st.column_config.NumberColumn(format='%.3f'),
+      'Valor no Endereço':st.column_config.NumberColumn(format='R$ %.2f'),
+     },
+    )
+    st.caption(
+     f'Posições reais disponíveis e {NAO_ENDERECADOS}. '
+     'Diferenças negativas geram alerta, nunca posição negativa fictícia.'
+    )
+   topic_divider()
+   section_band('03 · EXPORTAÇÃO','RELATÓRIOS PROTHEUS — CONFERÊNCIA E AUDITORIA')
+   st.caption(
+    'Ambos os modelos possuem as abas ESTOQUE GERAL e ESTOQUE POR ENDEREÇO, '
+    'com armazém, ranking numérico, cabeçalho e filtros. '
+    'Os códigos preservam zeros à esquerda e os valores são numéricos no Excel.'
+   )
+   _dl1,_dl2=st.columns(2)
+   _label_armz=_selected_warehouse if _selected_warehouse!='TODOS' else 'TODOS'
+   with _dl1:
+    st.download_button(
+     'BAIXAR CONFERÊNCIA — EXCEL',
+     data=exportar_excel(_conf,_pos,'Conferência',_label_armz),
+     file_name=f'ESTOQUE_CONFERENCIA_{_label_armz}_{now_local():%Y%m%d}.xlsx',
+     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     use_container_width=True,key='exp_estoque_conferencia',
+    )
+   with _dl2:
+    st.download_button(
+     'BAIXAR AUDITORIA — EXCEL',
+     data=exportar_excel(_audit,_pos,'Auditoria',_label_armz),
+     file_name=f'ESTOQUE_AUDITORIA_{_label_armz}_{now_local():%Y%m%d}.xlsx',
+     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     use_container_width=True,key='exp_estoque_auditoria',
+    )
+   st.caption(
+    'REGRA OFICIAL: ESTOQUE TRATADO É A REFERÊNCIA. '
+    'NÃO ENDEREÇADOS = SALDO DISPONÍVEL − ENDEREÇOS DISPONÍVEIS, '
+    'SOMENTE QUANDO A DIFERENÇA FOR POSITIVA, POR CÓDIGO E ARMAZÉM. '
+    'SEM EDIÇÃO DE SALDO NESTA TELA.'
+   )
  except Exception as exc:
   st.warning(f'Não foi possível consultar o ESTOQUE TRATADO na Central: {exc}')
 
