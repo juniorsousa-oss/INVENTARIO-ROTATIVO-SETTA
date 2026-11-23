@@ -169,10 +169,11 @@ def build_stock_reports(
 
     grp = ["Código", "Armazém"]
     nao_disp = e.loc[e["_bloqueado"]].groupby(grp)["quantidade"].sum()
-    a["Saldo Não Disponível"] = pd.Series(
-        a.set_index(grp).index.map(nao_disp).to_numpy(), index=a.index,
-        dtype=float,
-    ).fillna(0)
+    a = a.merge(
+        nao_disp.rename("Saldo Não Disponível").reset_index(),
+        on=grp, how="left", validate="one_to_one",
+    )
+    a["Saldo Não Disponível"] = a["Saldo Não Disponível"].fillna(0).astype(float)
     a["Saldo Disponível"] = (a["Saldo em Estoque"] - a["Saldo Não Disponível"]).clip(lower=0)
     divisor = a["Saldo em Estoque"].where(a["Saldo em Estoque"].abs() > 1e-12)
     a["Valor Unitário"] = (a["_valor_contabil"] / divisor).fillna(0)
