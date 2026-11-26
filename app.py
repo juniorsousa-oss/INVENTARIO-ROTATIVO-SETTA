@@ -1213,6 +1213,8 @@ with st.sidebar:
      pass
     st.session_state.pop('_setta_auth_user',None)
     st.session_state.pop('_annual_inventory_pilot_v1',None)
+    st.session_state.pop('_annual_inventory_pilot_code_v2',None)
+    st.session_state.pop('_ann_active_first',None)
     _setta_close_sidebar()
     st.rerun()
 
