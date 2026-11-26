@@ -1,8 +1,9 @@
 """Regression checks for the inventory presentation, without app side effects."""
 import base64
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import TestCase
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import setta_shell
 
@@ -17,6 +18,21 @@ class InventoryShellTests(TestCase):
             self.assertIn("data:font/woff2;base64,", markup)
             self.assertIn("--inv-top:58px", markup)
             self.assertIn("--inv-nav:220px", markup)
+
+    def test_stylesheet_refreshes_in_same_process(self):
+        st = Mock()
+        with TemporaryDirectory() as directory:
+            css = Path(directory) / "setta-inventory.css"
+            with patch.object(setta_shell, "_ASSETS", css.parent), patch.object(
+                setta_shell, "_encoded", return_value="AAAA"
+            ):
+                css.write_text(":root{--release:old}", encoding="utf-8")
+                setta_shell.render_shell(st, False)
+                self.assertIn("--release:old", st.html.call_args.args[0])
+                css.write_text(":root{--release:new}", encoding="utf-8")
+                setta_shell.render_shell(st, True)
+                self.assertIn("--release:new", st.html.call_args.args[0])
+                self.assertNotIn("--release:old", st.html.call_args.args[0])
 
     def test_official_logo_has_not_been_transformed(self):
         st = Mock()
