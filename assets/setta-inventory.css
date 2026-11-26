@@ -1,5 +1,5 @@
 /* Shell Setta: o topo pertence à viewport, não à coluna que rola. */
-:root{--inv-bg:#f0f0f0;--inv-ink:#333;--inv-mute:#525252;--inv-border:#e1e1e1;--inv-accent:#ffbb00;--inv-top:58px;--inv-nav:220px}
+:root{--inv-bg:#f0f0f0;--inv-ink:#333;--inv-mute:#525252;--inv-border:#e1e1e1;--inv-accent:#ffbb00;--inv-top:58px;--inv-nav:220px;--inv-toggle-left:12px;--inv-toggle-size:44px}
 .stApp,.stApp input,.stApp button,.stApp textarea,.stApp [data-testid="stMarkdownContainer"] :is(h1,h2,h3,h4,p){font-family:Outfit,system-ui,sans-serif}
 [data-testid="stAppViewContainer"],[data-testid="stMain"]{background:var(--inv-bg)!important}
 [data-testid="stMain"]{min-width:0;scroll-padding-top:calc(var(--inv-top) + 12px)}
@@ -7,16 +7,18 @@
 [data-testid="stHeader"],[data-testid="stToolbar"],[data-testid="stDecoration"],[data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"]{display:none!important}
 [data-testid="stElementContainer"]:has(#setta-inv-shell-style),.setta-shell-marker{display:none!important}
 [data-testid="stElementContainer"]:has(.setta-inv-top),[data-testid="stHtml"]:has(.setta-inv-top){display:contents!important}
-.setta-inv-top{position:fixed;z-index:1000;inset:0 0 auto;height:var(--inv-top);box-sizing:border-box;background:var(--inv-ink);color:#fff;display:flex;align-items:center;gap:13px;padding:7px 28px 7px 68px;pointer-events:none}
+.setta-inv-top{position:fixed;--inv-top-gap:13px;z-index:1000;inset:0 0 auto;height:var(--inv-top);box-sizing:border-box;background:var(--inv-ink);color:#fff;display:flex;align-items:center;gap:var(--inv-top-gap);padding:7px 28px 7px calc(var(--inv-toggle-left) + var(--inv-toggle-size) + var(--inv-top-gap));pointer-events:none}
 .setta-inv-top b{text-transform:uppercase;letter-spacing:.08em;font-size:.96rem;white-space:nowrap}
 .setta-inv-top small{border-left:1px solid #767676;padding-left:13px;font-size:.76rem;color:#e1e1e1}
-.setta-inv-mark{width:88px;height:38px;display:grid;place-items:center;background:#fff;border-radius:6px;flex:none}
-.setta-inv-mark img{width:66px;height:24px;object-fit:contain}
-.st-key-setta_top_controls{position:fixed!important;top:7px;left:12px;width:44px!important;height:44px!important;z-index:1001;margin:0!important}
-.st-key-setta_drawer_toggle button{width:44px!important;height:44px!important;min-height:44px!important;padding:0!important;color:#fff!important;background:#424242!important;border:1px solid #767676!important;border-radius:8px!important;box-shadow:none!important}
+.setta-inv-mark{box-sizing:border-box;width:88px;height:38px;display:grid;place-items:center;background:#fff;border-radius:6px;padding:7px 11px;flex:none}
+.setta-inv-mark img{display:block;width:100%;height:24px;object-fit:contain}
+.st-key-setta_top_controls{position:fixed!important;top:7px;left:var(--inv-toggle-left);width:var(--inv-toggle-size)!important;height:var(--inv-toggle-size)!important;z-index:1001;margin:0!important}
+.st-key-setta_drawer_toggle button{display:grid!important;place-items:center;box-sizing:border-box;width:var(--inv-toggle-size)!important;height:var(--inv-toggle-size)!important;min-height:var(--inv-toggle-size)!important;padding:0!important;color:#fff!important;background:#424242!important;border:1px solid #767676!important;border-radius:8px!important;box-shadow:none!important}
 [data-testid="stLayoutWrapper"]:has(> .st-key-setta_top_controls){display:contents!important}
 .st-key-setta_drawer_toggle button [data-testid="stMarkdownContainer"]{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.st-key-setta_drawer_toggle button [data-testid="stIconMaterial"]{font-size:21px;line-height:1}
+/* O botão nativo conserva o rótulo e a ação; o glifo é só visual. */
+.st-key-setta_drawer_toggle button::before{content:"☰" / "";font:400 20px/1 Outfit,system-ui,sans-serif}
+body:has(.setta-drawer-open) .st-key-setta_drawer_toggle button::before{content:"×" / "";font-size:24px}
 .st-key-setta_drawer_toggle button:hover{background:#555!important}
 .st-key-setta_drawer_toggle button:focus-visible{outline:2px solid #ffbb00!important;outline-offset:2px}
 .setta-inv-intro{padding-top:12px}.setta-inv-breadcrumb{font-size:.75rem;color:var(--inv-mute)}
@@ -72,7 +74,7 @@ body [data-testid="stMain"] .st-key-setta_drawer_toggle button{background:#42424
 @media(max-width:900px){body:has(.setta-drawer-open) section[data-testid="stSidebar"]{position:fixed!important;left:0!important;box-shadow:8px 8px 22px #0004}body:has(.setta-drawer-open) [data-testid="stAppViewContainer"]::after{content:"";position:fixed;inset:var(--inv-top) 0 0;background:#0004;z-index:890}.setta-inv-summary{gap:6px}}
 @media(max-width:700px){
  [data-testid="stMainBlockContainer"]{padding:var(--inv-top) 12px 18px!important}
- .setta-inv-top{padding-right:12px;gap:8px}.setta-inv-mark{width:66px;height:30px}.setta-inv-mark img{width:52px;height:21px}.setta-inv-top b{font-size:.83rem}.setta-inv-top small{display:none}
+ .setta-inv-top{--inv-top-gap:8px;padding-right:12px}.setta-inv-mark{width:66px;height:30px;padding:2px 5px}.setta-inv-top b{font-size:.83rem}.setta-inv-top small{display:none}
  .setta-inv-intro{padding-top:10px}.setta-inv-stat{padding:8px;font-size:.68rem}.setta-inv-stat b{font-size:1.08rem}
  .inv-lot-head{display:none!important}
  .st-key-inv_lots [class*="st-key-inv_lot_row_"] [data-testid="stHorizontalBlock"]{grid-template-columns:auto minmax(0,1fr) auto;gap:4px 8px!important}

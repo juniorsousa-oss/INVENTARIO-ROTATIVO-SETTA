@@ -68,7 +68,7 @@ shell_css = read("assets/setta-inventory.css")
 for token in ["SETTA UI — Layout padrão Streamlit", "outfit-latin.woff2", "setta-logo-oficial.svg", "setta-drawer-closed", "setta-drawer-open"]:
     if token not in shell:
         fail(f"Contrato SETTA ausente: {token}")
-for token in ["--inv-top:58px", "--inv-nav:220px", ".setta-inv-top{position:fixed", "top:7px;left:12px", "@media(max-width:900px)", "@media(max-width:700px)", ".setta-inv-intro{padding-top:12px}", ".st-key-setta_account_footer", ".inv-lot-head{display:none!important}"]:
+for token in ["--inv-top:58px", "--inv-nav:220px", ".setta-inv-top{position:fixed", "top:7px;left:var(--inv-toggle-left)", "--inv-toggle-left:12px", "--inv-toggle-size:44px", "calc(var(--inv-toggle-left) + var(--inv-toggle-size) + var(--inv-top-gap))", "@media(max-width:900px)", "@media(max-width:700px)", ".setta-inv-intro{padding-top:12px}", ".st-key-setta_account_footer", ".inv-lot-head{display:none!important}"]:
     if token not in shell_css:
         fail(f"Regra visual Setta ausente: {token}")
 

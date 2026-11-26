@@ -1161,7 +1161,6 @@ with st.container(key='setta_top_controls'):
  st.button(
   'Fechar menu lateral' if _setta_sidebar_is_open() else 'Abrir menu lateral',
   key='setta_drawer_toggle',
-  icon=':material/close:' if _setta_sidebar_is_open() else ':material/menu:',
   use_container_width=True,
   on_click=_setta_toggle_sidebar,
  )
