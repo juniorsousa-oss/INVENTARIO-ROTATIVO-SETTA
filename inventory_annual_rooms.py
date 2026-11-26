@@ -104,7 +104,8 @@ def _state(pilot, drafts=None, evidence=None, *, info=None, extras=None):
             "snapshot": pilot._snapshot, "system": pilot._total, "catalog": pilot._catalog,
             "positions": {a: {k: asdict(row) for k, row in rows.items()} for a, rows in pilot.positions.items()},
             "drafts": drafts or {}, "evidence": evidence or {}, "info": info or {},
-            "free": pilot.free, "roster": pilot.roster, "extras": extras or {}}
+            "free": pilot.free, "roster": pilot.roster, "extras": extras or {},
+            "address_book": pilot.address_book, "tracked": sorted(pilot.tracked), "lot_snapshot": pilot.lot_snapshot}
 
 
 def team_ids(people):
@@ -147,10 +148,16 @@ def _restore(state):
     p = AnnualPilot(assignment=state["assignment"], started_at=datetime.fromisoformat(state["started"]),
                     closed_at=datetime.fromisoformat(state["closed"]) if state["closed"] else None,
                     free=state.get("free", False), roster=tuple(state.get("roster", ())))
+    p.address_book = state.get("address_book") or {}
+    p.tracked = set(state.get("tracked") or [])
+    def lots(mapping):
+        return {lot: dec(q) for lot, q in mapping.items()} if mapping is not None else None
+    p.lot_snapshot = {a: {k: lots(mapping) for k, mapping in products.items()}
+                      for a, products in (state.get("lot_snapshot") or {}).items()}
     p._snapshot = {a: {k: dec(v) for k, v in rows.items()} for a, rows in state["snapshot"].items()}
     p._total = {k: dec(v) for k, v in state["system"].items()}
     p._catalog = {k: (v[0], dec(v[1])) for k, v in state["catalog"].items()}
-    p.positions = {a: {k: Position(**{f: dec(v) if f in ("system", "first", "second", "final") else v
+    p.positions = {a: {k: Position(**{f: dec(v) if f in ("system", "first", "second", "final") else lots(v) if f.endswith("_lots") else v
                                     for f, v in record.items()}) for k, record in rows.items()}
                    for a, rows in state["positions"].items()}
     return p
@@ -201,7 +208,7 @@ def formation(people, mode, participants, title):
 def create_room(assignment, locked, *, teams=None, people=None, title=TITLE, mode=None, participants="", path=PATH):
     info = formation(people, mode, participants, title) if mode else (validate_teams(teams, people, title) if teams is not None else {})
     p = AnnualPilot()
-    p.start(assignment, locked, teams=tuple(info["teams"]) if info else TEAMS, free=mode is not None)
+    p.start(assignment, locked, teams=tuple(info["teams"]) if info else TEAMS, free=mode is not None, checked=mode is not None)
     token = secrets.token_urlsafe(24)
     room = secrets.token_hex(8)
     now = int(time.time())
@@ -339,6 +346,7 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
             if not p.free or role not in p.teams:
                 raise ValueError("Somente a equipe de contagem pode iniciar um endereço.")
             address = normalize_address(address)
+            p.validate_address(address)
             owner = p.assignment.get(address)
             if owner is None:
                 p.assignment[address] = role
@@ -394,18 +402,21 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
                 if expected is not None and expected != draft_version(lines):
                     raise ValueError("O rascunho mudou em outro aparelho. Atualize e confira antes de enviar.")
                 totals = defaultdict(Decimal)
+                per_lot = defaultdict(lambda: defaultdict(Decimal))
                 for r in lines:
-                    totals[r["product"]] += qty(r["quantity"])
+                    amount = qty(r["quantity"])
+                    totals[r["product"]] += amount
+                    per_lot[r["product"]][r["lot"]] += amount
                 if stage == FIRST:
-                    p.first(role, address, dict(totals), empty=empty, complete=complete)
+                    p.first(role, address, dict(totals), empty=empty, complete=complete, by_lot=per_lot)
                 elif not complete or (empty and lines) or (not empty and not lines):
                     raise ValueError("Confirme a conferência e registre as etiquetas ou marque produto não encontrado.")
                 elif stage == EXTRA:
                     extras[address][role] = "submitted"
                 elif stage == SECOND:
-                    p.recount(role, address, product, totals[product])
+                    p.recount(role, address, product, totals[product], by_lot=per_lot[product])
                 else:
-                    p.audit(address, product, totals[product], note[:400], role)
+                    p.audit(address, product, totals[product], note[:400], role, by_lot=per_lot[product])
                 evidence[key] = lines
                 drafts.pop(key, None)
             else:

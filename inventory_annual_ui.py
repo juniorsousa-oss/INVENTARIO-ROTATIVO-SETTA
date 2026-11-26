@@ -59,7 +59,7 @@ def _setup(st):
     st.caption(f'{plan["people"]} pessoa(s) · {len(plan["teams"])} equipe(s) · {plan["mode"]}')
     st.dataframe([{"Equipe": d["name"], "Responsável": d["lead"],
                    "Auxiliar": d["assistant"] or "—"} for d in plan["teams"].values()], hide_index=True)
-    st.caption("Sem endereços pré-atribuídos. Cada equipe informa o endereço que vai contar.")
+    st.caption("Sem endereços pré-atribuídos. Cada equipe informa um endereço apto do S2; o piloto confere o cadastro antes de abrir.")
     if st.button("Editar formação das equipes"):
         st.session_state[PREP] = {**plan, "ready": False}
         st.rerun()
@@ -148,6 +148,17 @@ def _coordinator(st, token, current):
         st.dataframe(details, hide_index=True)
     else:
         st.caption("Nenhuma divergência ou auditoria registrada.")
+    if pilot.tracked:
+        st.subheader("Conferência por lote")
+        lot_rows = [{"Endereço": a, "Produto": code, "Lote": lot, "Saldo de corte": float(system),
+                     "1ª contagem": float(first), "2ª contagem": float(second) if second is not None else None,
+                     "Final": float(final), "Diferença final": float(delta)}
+                    for a, code, lot, system, first, second, final, delta in pilot.lot_discrepancies()]
+        if lot_rows:
+            st.dataframe(lot_rows, hide_index=True)
+        else:
+            st.caption("Nenhuma diferença registrada nos lotes rastreados.")
+        st.caption("O ajuste em valor continua por produto. Uma troca de lotes com totais iguais não gera diferença em reais.")
     st.info("Exportação para ajuste em massa indisponível: layout do Protheus ainda não validado.")
     evidence = []
     for key, rows in current["evidence"].items():
@@ -374,6 +385,7 @@ def _inventory_list(st, manager):
 
 def render(st, *, manager=False):
     st.warning("PILOTO · Dados fictícios do S2. Sem integração com o estoque real ou o Protheus.")
+    st.caption("Novos pilotos validam endereços do S2 e conferem lotes dos itens rastreados.")
     st.caption("Os rascunhos salvos ficam neste piloto por até três dias e dependem de o servidor não ser recriado.")
     token = st.session_state.get(STATE)
     if not token:
