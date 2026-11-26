@@ -40,6 +40,11 @@ class InventoryShellTests(TestCase):
             self.assertIn(f"<h1>{title}</h1>", markup)
         self.assertEqual(len(titles), 7)
 
+    def test_sidebar_routes_have_distinct_material_icons(self):
+        icons = [setta_shell.route_icon(page) for page in setta_shell._ROUTES]
+        self.assertEqual(len(set(icons)), 7)
+        self.assertTrue(all(icon.startswith(":material/") and icon.endswith(":") for icon in icons))
+
     def test_status_markup_never_interprets_status_as_html(self):
         self.assertIn("inv-status-count", setta_shell.status_badge("EM CONTAGEM"))
         self.assertIn("inv-status-closed", setta_shell.status_badge("FECHADO"))
