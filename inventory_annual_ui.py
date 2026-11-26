@@ -89,7 +89,7 @@ def _coordinator(st, token, current):
     st.subheader("Acompanhar endereços")
     st.text(current["title"])
     st.caption("Saldo de corte: " + pilot.started_at.strftime("%d/%m/%Y às %H:%M"))
-    covered = set(ELIGIBLE) | pilot.assignment.keys()
+    covered = set(pilot.eligible_addresses()) | pilot.assignment.keys()
     st.progress(sum(pilot.address_status(a) == VALIDATED for a in covered) / len(covered))
     with st.expander("Equipes e endereços"):
         st.dataframe([{"Equipe": data["name"], "Cabeça de chave": data["lead"], "Auxiliar": data["assistant"],
@@ -275,10 +275,19 @@ def _free_count(st, token, current):
                 st.session_state.pop(key, None)
             st.rerun()
 
-    with st.form("ann_enter_address", clear_on_submit=True):
-        address = st.text_input("Informe o endereço do S2", max_chars=60)
-        if st.form_submit_button("Abrir endereço", type="primary"):
+    options = current["address_options"]
+    if options:
+        address = st.selectbox("Buscar endereço do S2", options, index=None, filter_mode="contains",
+                               placeholder="Digite parte do endereço", accept_new_options=False,
+                               key="ann_search_" + current["room_id"])
+        st.caption("A busca lista só endereços aptos do S2 do relatório ENDEREÇO. Se não aparecer, o endereço não pode ser aberto neste piloto.")
+        if st.button("Abrir endereço", type="primary", disabled=address is None):
             open_at(address)
+    else:
+        with st.form("ann_enter_address", clear_on_submit=True):
+            address = st.text_input("Informe o endereço do S2", max_chars=60)
+            if st.form_submit_button("Abrir endereço", type="primary"):
+                open_at(address)
     conflict = st.session_state.get("_annual_address_conflict")
     if conflict and conflict[0] == token:
         _, address, owner, message = conflict
@@ -385,7 +394,7 @@ def _inventory_list(st, manager):
 
 def render(st, *, manager=False):
     st.warning("PILOTO · Dados fictícios do S2. Sem integração com o estoque real ou o Protheus.")
-    st.caption("Novos pilotos validam endereços do S2 e conferem lotes dos itens rastreados.")
+    st.caption("Novos pilotos sugerem endereços aptos do S2 com base no relatório ENDEREÇO de teste.")
     st.caption("Os rascunhos salvos ficam neste piloto por até três dias e dependem de o servidor não ser recriado.")
     token = st.session_state.get(STATE)
     if not token:

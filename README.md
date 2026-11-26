@@ -210,8 +210,13 @@ A Coordenação fornece o código da equipe. Em outro aparelho, acesse
 pelo nome da equipe em **Meus inventários**. Cada código libera a contagem
 atribuída e, quando aplicável, uma aba **Recontagem** independente e cega.
 
-Para a 1ª contagem, digite o endereço do S2 e abra a tarefa, sem atribuição
-prévia. Novos pilotos validam no cadastro fictício se o endereço existe, é do S2 e está apto. Os quatro endereços aptos são A-01, A-02, B-01 e B-02; X-01 não é apto e E2-01 pertence a outro armazém. Se outra equipe
+Para a 1ª contagem, digite parte do endereço no campo de busca, escolha
+uma sugestão e abra a tarefa, sem atribuição prévia. O catálogo do piloto vem
+de uma amostra com o formato do relatório ENDEREÇO, sem importar quantidades.
+Só endereços aptos do S2 aparecem; ausentes ou ambíguos não podem ser
+abertos. Um endereço que consta no relatório com saldo zero não é excluído
+por esse motivo. O catálogo fica fixo durante o piloto, e o servidor
+reconfere se o endereço está apto. Os quatro endereços aptos são A-01, A-02, B-01 e B-02; X-01 não é apto e E2-01 pertence a outro armazém. Se outra equipe
 já abriu ou enviou o mesmo endereço, o aplicativo identifica a equipe e
 pede confirmação antes de permitir uma conferência extra. Essa conferência
 é registrada separadamente e nunca entra no total oficial. Leia as etiquetas

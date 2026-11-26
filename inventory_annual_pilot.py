@@ -4,6 +4,8 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from inventory_annual_addresses import address_book_from_report, pilot_address_report
+
 TEAMS = ("Dupla A", "Dupla B")
 INDEPENDENT = "Conferência independente"
 ELIGIBLE = ("A-01", "A-02", "B-01", "B-02")
@@ -17,8 +19,6 @@ SNAPSHOT = {"A-01": {"SIM-001": 10, "SIM-002": 5},
             "B-02": {}, "X-01": {"SIM-001": 2, "SIM-002": 1}}
 SYSTEM_TOTAL = {"SIM-001": 15, "SIM-002": 6, "SIM-003": 4}
 # Cadastro e detalhe de lotes fictícios, separados do Analítico.
-ADDRESS_BOOK = {**{a: ("S2", True) for a in ELIGIBLE},
-                **{a: ("S2", False) for a in EXCLUDED}, "E2-01": ("E2", True)}
 TRACKED = {"SIM-001"}
 LOT_SNAPSHOT = {
     "A-01": {"SIM-001": {"000101": 6, "000102": 4}},
@@ -81,7 +81,7 @@ class AnnualPilot:
         self._total = {k: qty(v) for k, v in SYSTEM_TOTAL.items()}
         self._catalog = dict(CATALOG)
         if checked:
-            self.address_book = dict(ADDRESS_BOOK)
+            self.address_book = address_book_from_report(pilot_address_report(), excluded=EXCLUDED)
             self.tracked = set(TRACKED)
             self.lot_snapshot = {a: {k: {lot: qty(q) for lot, q in values.items()} for k, values in products.items()}
                                  for a, products in LOT_SNAPSHOT.items()}
@@ -102,10 +102,18 @@ class AnnualPilot:
         if data is None:
             raise ValueError("Endereço não encontrado no cadastro do piloto. Confira o código digitado.")
         warehouse, eligible = data
+        if warehouse == "INDEFINIDO":
+            raise ValueError("Não foi possível comprovar que este endereço pertence ao S2.")
         if warehouse != "S2":
             raise ValueError("Este endereço pertence a outro armazém. Só o S2 pode ser contado.")
         if not eligible:
             raise ValueError("Este endereço não é apto para contagem no S2.")
+
+    def eligible_addresses(self):
+        if self.address_book:
+            return tuple(sorted(a for a, (warehouse, eligible) in self.address_book.items()
+                                if warehouse == "S2" and eligible))
+        return ELIGIBLE
 
     def _lots(self, product, value, distribution):
         if product not in self.tracked:
@@ -203,7 +211,7 @@ class AnnualPilot:
         return VALIDATED
 
     def ready(self):
-        return bool(self.started_at and all(self.address_status(a) == VALIDATED for a in set(ELIGIBLE) | self.assignment.keys()))
+        return bool(self.started_at and all(self.address_status(a) == VALIDATED for a in set(self.eligible_addresses()) | self.assignment.keys()))
 
     def close(self):
         self._require_open()

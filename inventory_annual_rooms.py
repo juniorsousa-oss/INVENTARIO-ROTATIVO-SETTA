@@ -13,8 +13,8 @@ import secrets
 import sqlite3
 import tempfile
 import time
-import unicodedata
 
+from inventory_annual_addresses import canonical_address
 from inventory_annual_pilot import (
     AUDIT, FIRST, SECOND, CATALOG, ELIGIBLE, EXCLUDED, TEAMS, INDEPENDENT, AnnualPilot, Position, qty,
 )
@@ -44,11 +44,7 @@ class Reading:
 
 
 def normalize_address(value):
-    text = unicodedata.normalize("NFKC", str(value or "")).upper()
-    text = re.sub(r"[‐‑‒–—−]", "-", text)
-    text = re.sub(r"\s*([-./])\s*", r"\1", " ".join(text.split()))
-    if not re.fullmatch(r"[A-Z0-9][A-Z0-9 ._/-]{0,59}", text):
-        raise ValueError("Informe um endereço válido do S2.")
+    text = canonical_address(value)
     if text in EXCLUDED:
         raise ValueError("Este endereço não é apto para contagem no S2.")
     return text
@@ -293,7 +289,7 @@ def view(token, *, path=PATH):
     if role == COORD:
         queue = []
         if p.free:
-            queue.extend((a, "", FIRST, "Ainda não iniciado", False) for a in ELIGIBLE if a not in p.assignment)
+            queue.extend((a, "", FIRST, "Ainda não iniciado", False) for a in p.eligible_addresses() if a not in p.assignment)
         for a, team in p.assignment.items():
             status = p.address_status(a)
             if status == FIRST:
@@ -324,7 +320,8 @@ def view(token, *, path=PATH):
             tasks[AUDIT] = p.audit_queue()
     own = {task_key(stage, a, c, role): state["drafts"].get(task_key(stage, a, c, role), [])
            for stage, pairs in tasks.items() for a, c in pairs}
-    return {**common, "tasks": tasks, "drafts": own}
+    return {**common, "tasks": tasks, "drafts": own,
+            "address_options": p.eligible_addresses() if p.address_book and p.free and role in p.teams else ()}
 
 
 def draft_version(lines):
