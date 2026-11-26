@@ -195,37 +195,34 @@ O teste em `tests/sql/inventory_document_guard.sql` usa lotes artificiais e deve
 
 ## Inventário Anual · Piloto
 
-A aba usa exclusivamente dados fictícios. Em **Criar piloto**, confirme o
-bloqueio simulado do S2 e distribua os quatro endereços. A Coordenação fornece
-um código separado para cada dupla e para a Auditoria. Use **Acessar piloto**
-em outro aparelho ou navegador para entrar somente com o papel correspondente.
-O rascunho salvo permanece ao sair e voltar com o mesmo código, por até três
-dias no mesmo servidor. O piloto não é um ambiente de persistência definitiva.
+A aba usa exclusivamente dados fictícios. Entre com perfil **Gestor** do
+Inventário (se o login não foi solicitado automaticamente, use Configurações).
+Em **Criar piloto**, escolha quantas pessoas contarão, de 2 a 8 nesta amostra
+de quatro endereços. Cadastre o nome de cada dupla, o cabeça de chave e o
+auxiliar com nomes fictícios, distribua os endereços aptos e confirme o
+bloqueio simulado do S2. Só o Gestor vê a preparação e os códigos das equipes.
+Se houver apenas uma dupla, uma pessoa independente faz a segunda contagem
+com um código próprio, separado do acesso da Auditoria.
 
-Para a 1ª contagem, abra explicitamente o endereço, leia suas etiquetas e entregue
-o endereço antes de abrir o próximo. O QR no formato atual traz
-`produto,lote,quantidade`, sem endereço. Teste com `00000001,000101,3`.
-Os códigos fictícios `00000001`, `00000002` e `00000003` correspondem a
-`SIM-001`, `SIM-002` e `SIM-003`. Etiquetas antigas permitem lançar
-separadamente produto, lote e quantidade. O campo de QR aceita leitores que
+A Coordenação fornece o código da equipe. Em outro aparelho, acesse
+**Inventário anual → Acessar piloto**, entre com o código e abra o inventário
+pelo nome da equipe em **Meus inventários**. Cada código libera a contagem
+atribuída e, quando aplicável, uma aba **Recontagem** independente e cega.
+
+Para a 1ª contagem, abra um endereço, leia as etiquetas e confira o rascunho.
+**Sair do endereço sem enviar** preserva as leituras e permite abrir e editar
+quantas vezes for necessário. **Enviar para conferência** exige confirmação,
+trava o endereço e compara a contagem com o saldo de corte. Só divergências
+chegam à aba de recontagem da equipe designada. O rascunho salvo permanece por
+até três dias no mesmo servidor; não é persistência definitiva.
+
+O QR atual traz `produto,lote,quantidade`, sem endereço. Teste com
+`00000001,000101,3`. Os códigos fictícios `00000001`, `00000002` e `00000003`
+correspondem a `SIM-001`, `SIM-002` e `SIM-003`. Etiquetas antigas permitem
+lançar separadamente produto, lote e quantidade. O campo aceita leitores que
 digitam o conteúdo; também é possível colá-lo. Não há câmera embutida.
-
-A mesma combinação de endereço, produto e lote acumula as quantidades; lotes
-distintos não são agrupados no rascunho. Para leituras idênticas, confirme que
-se trata de outra etiqueta física para evitar duplicidade acidental. A
-Coordenação acompanha endereço, responsável, etapa e existência de rascunho
-sem consultar as quantidades das duplas antes do fechamento. A conferência do
-piloto segue por produto e endereço; o fechamento mantém o rastreio por lote.
-
-Roteiro do piloto com a distribuição padrão:
-
-| Endereço | 1ª contagem | 2ª contagem (outra dupla) | Auditoria |
-| --- | --- | --- | --- |
-| A-01 | SIM-001 = 9, em lotes 000101 (3 + 2) e 000102 (4); SIM-002 = 5 | SIM-001 = 8 | SIM-001 = 9, com justificativa |
-| A-02 | SIM-001 = 3 | — | — |
-| B-01 | SIM-003 = 4 | — | — |
-| B-02 | Entregar como vazio | — | — |
-
-Na Coordenação, feche após a auditoria. SIM-001: 12 nas posições aptas + 2 no
-endereço não apto = 14 contra 15 no corte, falta de 1 unidade e R$ 10,00.
-Sem ligação com estoque real, Protheus ou Rotativo.
+A mesma combinação de endereço, produto e lote acumula as quantidades;
+lotes diferentes ficam separados. Em leituras idênticas, confirme que se
+trata de outro volume antes de somar. A Coordenação acompanha a etapa e o
+responsável; o fechamento mantém o rastreio por lote. Sem ligação com estoque
+real, Rotativo ou Protheus.

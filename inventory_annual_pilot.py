@@ -5,6 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 TEAMS = ("Dupla A", "Dupla B")
+INDEPENDENT = "Conferência independente"
 ELIGIBLE = ("A-01", "A-02", "B-01", "B-02")
 EXCLUDED = {"X-01": "Área de produção (não apta)"}
 CATALOG = {"SIM-001": ("Parafuso", Decimal("10.00")),
@@ -50,8 +51,8 @@ class AnnualPilot:
     positions: dict = field(default_factory=dict)
     closed_at: datetime | None = None
 
-    def start(self, assignment, locked):
-        if self.started_at or not locked or set(assignment) != set(ELIGIBLE) or set(assignment.values()) != set(TEAMS):
+    def start(self, assignment, locked, *, teams=TEAMS):
+        if self.started_at or not locked or set(assignment) != set(ELIGIBLE) or set(assignment.values()) != set(teams) or not teams:
             raise ValueError("Confirme o bloqueio simulado e distribua todos os endereços entre as duplas.")
         # Uma foto defensiva é copiada para a sessão; mudanças futuras às
         # constantes ou à interface não alteram o corte de uma sessão aberta.
@@ -86,16 +87,25 @@ class AnnualPilot:
                                   decision="1ª confirma o sistema" if matches else "")
         self.positions[address] = rows
 
+    @property
+    def teams(self):
+        return tuple(sorted(set(self.assignment.values())))
+
+    def recount_owner(self, address):
+        first_team = self.assignment[address]
+        teams = self.teams
+        if len(teams) == 1:
+            return INDEPENDENT
+        return teams[(teams.index(first_team) + 1) % len(teams)]
+
     def queue(self, team):
-        if team not in TEAMS:
-            return []
-        return [(a, k) for a, rows in self.positions.items() if self.assignment[a] != team
+        return [(a, k) for a, rows in self.positions.items() if self.recount_owner(a) == team
                 for k, row in rows.items() if row.stage == SECOND]
 
     def recount(self, team, address, code, value):
         self._require_open()
         if (address, code) not in self.queue(team):
-            raise ValueError("A recontagem deve ser feita pela outra dupla.")
+            raise ValueError("A recontagem cabe à equipe ou conferente independente designado.")
         row = self.positions[address][code]
         second = qty(value)
         row.second = second
