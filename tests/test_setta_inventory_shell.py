@@ -43,6 +43,25 @@ class InventoryShellTests(TestCase):
         self.assertIn(expected, markup)
         self.assertIn('alt="Setta"', markup)
 
+    def test_navigation_loader_is_installed_with_the_fixed_header(self):
+        st = Mock()
+        setta_shell.render_top(st)
+        markup = st.html.call_args.args[0]
+        self.assertIn('class="setta-inv-top"', markup)
+        self.assertIn('role="status" aria-live="polite"', markup)
+        self.assertIn('Carregando aba…', markup)
+        self.assertIn("window.__settaInventoryNavigation", markup)
+        self.assertTrue(st.html.call_args.kwargs["unsafe_allow_javascript"])
+
+    def test_fixed_header_is_rendered_without_script_asset(self):
+        st = Mock()
+        with TemporaryDirectory() as directory, patch.object(
+            setta_shell, "_ASSETS", Path(directory)
+        ), patch.object(setta_shell, "_encoded", return_value="AAAA"):
+            setta_shell.render_top(st)
+        self.assertIn('class="setta-inv-top"', st.html.call_args.args[0])
+        self.assertFalse(st.html.call_args.kwargs["unsafe_allow_javascript"])
+
     def test_routes_keep_unique_titles_and_breadcrumbs(self):
         st = Mock()
         titles = set()

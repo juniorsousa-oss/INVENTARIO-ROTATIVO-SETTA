@@ -19,6 +19,19 @@
 .st-key-setta_drawer_toggle button [data-testid="stIconMaterial"]{font-size:21px;line-height:1}
 .st-key-setta_drawer_toggle button:hover{background:#555!important}
 .st-key-setta_drawer_toggle button:focus-visible{outline:2px solid #ffbb00!important;outline-offset:2px}
+/* O conteúdo antigo não participa da troca; fora dela, os widgets
+   mantêm seu funcionamento e o Streamlit pode atualizar a página normal. */
+.setta-inv-route-loader{display:none}
+html[data-setta-inventory-navigating] [data-testid="stMainBlockContainer"],
+html[data-setta-inventory-navigating] [data-testid="stMainBlockContainer"] *{visibility:hidden!important;pointer-events:none!important}
+html[data-setta-inventory-navigating] [data-testid="stMainBlockContainer"] :is(
+ .setta-inv-top,.setta-inv-top *,.st-key-setta_top_controls,.st-key-setta_top_controls *,.setta-inv-route-loader
+){visibility:visible!important}
+html[data-setta-inventory-navigating] [data-testid="stMainBlockContainer"] .st-key-setta_top_controls button{pointer-events:auto!important}
+html[data-setta-inventory-navigating] .setta-inv-route-loader{
+ display:block;position:fixed;top:calc(var(--inv-top) + 20px);left:50%;transform:translateX(-50%);z-index:910;
+ color:var(--inv-mute);font:.875rem Outfit,system-ui,sans-serif;
+}
 .setta-inv-intro{padding-top:12px}.setta-inv-breadcrumb{font-size:.75rem;color:var(--inv-mute)}
 .setta-inv-intro h1{font-size:clamp(1.45rem,3vw,1.95rem)!important;font-weight:780;letter-spacing:-.035em;line-height:1.15;margin:4px 0 3px;padding:0;color:var(--inv-ink)}
 .setta-inv-intro p{margin:0;color:var(--inv-mute);font-size:.84rem}
