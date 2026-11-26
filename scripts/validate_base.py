@@ -64,26 +64,13 @@ for page in expected_pages:
     if token not in app:
         fail(f"Renderização ausente: {page}")
 
-for token in [
-    "SETTA UI — Layout padrão Streamlit",
-    "max-width:none!important",
-    "width:260px!important",
-    "border-radius:0!important",
-    "top:18px!important",
-    "left:44px!important",
-    "@media(max-width:900px)",
-    "if not sidebar_open:",
-    "if sidebar_open:",
-    'section[data-testid="stSidebar"][aria-expanded="false"]',
-    "display:flex!important",
-    "display:block!important",
-    "visibility:visible!important",
-    "transform:none!important",
-    "height:auto!important",
-    "max-height:none!important",
-]:
+shell_css = read("assets/setta-inventory.css")
+for token in ["SETTA UI — Layout padrão Streamlit", "outfit-latin.woff2", "setta-logo-oficial.svg", "setta-drawer-closed", "setta-drawer-open"]:
     if token not in shell:
         fail(f"Contrato SETTA ausente: {token}")
+for token in ["--inv-top:58px", "--inv-nav:220px", ".setta-inv-top{position:fixed", "top:7px;left:12px", "@media(max-width:900px)", "@media(max-width:700px)", ".setta-inv-intro{padding-top:12px}", ".st-key-setta_account_footer", ".inv-lot-head{display:none!important}"]:
+    if token not in shell_css:
+        fail(f"Regra visual Setta ausente: {token}")
 
 for forbidden in [
     "SETTA UI — App Shell Rounded V1",
@@ -195,8 +182,8 @@ if actual != expected_requirements:
 
 for token in [
     'base = "light"',
-    'primaryColor = "#111827"',
-    'backgroundColor = "#F4F7FB"',
+    'primaryColor = "#FFBB00"',
+    'backgroundColor = "#F0F0F0"',
     'toolbarMode = "minimal"',
 ]:
     if token not in config:
@@ -315,22 +302,10 @@ for token in [
     if token not in migration:
         fail(f"Proteção da exclusão ausente: {token}")
 
-# A coluna lateral deve ocupar a altura real da página, inclusive após 100vh.
-for token in [
-    "align-items:stretch!important",
-    "align-self:stretch!important",
-    "min-height:100vh!important",
-    "max-height:none!important",
-    "position:sticky!important",
-]:
-    if token not in shell:
-        fail(f"Menu lateral SETTA não acompanha a página: {token}")
-
-if re.search(
-    r'section\[data-testid="stSidebar"\]\s*\{\{[^}]*(?<!-)height:100vh!important',
-    shell, re.S
-):
-    fail("Menu lateral voltou à altura fixa da tela.")
+# A navegação permanece acessível e rola independentemente em telas curtas.
+for token in ["position:sticky!important", "position:fixed!important", "calc(100dvh - var(--inv-top))", "overflow:auto!important", "env(safe-area-inset-bottom)"]:
+    if token not in shell_css:
+        fail(f"Navegação fixa/rolável incompleta: {token}")
 
 # Novos fluxos devem manter as permissões, a prioridade rotativa e as APIs.
 for token in [

@@ -1,5 +1,6 @@
 import os, io, copy, pickle, sqlite3, tempfile, uuid, time, hashlib
 from datetime import datetime, timedelta
+from html import escape
 from zoneinfo import ZoneInfo
 from PIL import Image
 import pandas as pd
@@ -55,10 +56,6 @@ try:
 except Exception:
  _GLOBAL_VISUAL_CONFIG={}
 
-SETTA_UI_CONFIG=setta_shell.build_ui_config(
- _GLOBAL_VISUAL_CONFIG.get('ui_config') or {}
-)
-
 def _global_browser_icon():
  try:
   raw=central_data.favicon_bytes(_GLOBAL_VISUAL_CONFIG)
@@ -92,9 +89,10 @@ def now_local():
  return datetime.now(TZ)
 
 # O shell é emitido antes de qualquer leitura remota operacional.
-setta_shell.render_shell(st,SETTA_UI_CONFIG,sidebar_open=_setta_sidebar_is_open())
+setta_shell.render_shell(st,sidebar_open=_setta_sidebar_is_open())
+setta_shell.render_top(st)
 
-BUILD_DIAGNOSTICO = 'inventory-20261020-escopo-s2-fechamento'
+BUILD_DIAGNOSTICO = 'inventory-20261126-padrao-visual-setta'
 INVENTORY_DATA_EPOCH='20261007-RESET-01'
 DATA=os.path.join(tempfile.gettempdir(),'inventario_operacional.sqlite3')
 
@@ -351,7 +349,7 @@ def _setta_login_required():
 def _render_setta_auth_gate():
  if not _setta_login_required() or _auth_user():
   return True
- section_band('ACESSO SETTA','AUTENTICAÇÃO NECESSÁRIA','UTILIZE O MESMO USUÁRIO E SENHA DO OPERAHUB.')
+ st.html('<div class="setta-inv-intro"><div class="setta-inv-breadcrumb">Setta / Acesso</div><h1>Entrar no Inventário</h1><p>Use a mesma conta do OperaHub.</p></div>')
  if st.session_state.get('_setta_auth_policy_error'):
   st.warning('Não foi possível confirmar a política central de acesso. Por segurança, o aplicativo permanece bloqueado até a autenticação.')
  with st.form('setta_auth_login_form',clear_on_submit=False):
@@ -419,12 +417,6 @@ def signed_brl(v):
  if abs(x)<1e-12:return 'R$ 0,00'
  return ('+' if x>0 else '-')+brl(abs(x))
 
-def logo_uri():
- try:
-  return central_data.logo_data_uri(_GLOBAL_VISUAL_CONFIG) or None
- except Exception:
-  return None
-
 def section_band(kicker,title,note=''):
  note_html=f'<div class="section-band-note">{note}</div>' if str(note or '').strip() else ''
  st.markdown(f'<div class="section-band"><div class="section-band-kicker">{kicker}</div><div class="section-band-title">{title}</div>{note_html}</div>',unsafe_allow_html=True)
@@ -490,60 +482,59 @@ st.markdown(
     """
 <style id="inventory-component-style">
 div[data-testid="stElementContainer"]:has(#inventory-component-style){display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important}
-:root{--p:#111827}
-.section-title{margin:0 0 1rem!important;color:#0f172a!important;font-size:1.28rem!important;font-weight:900!important;letter-spacing:-.02em;text-transform:uppercase}
-.section-band{margin:0 0 .95rem!important;padding:.82rem 1rem!important;background:#fff!important;border:1px solid #e5e8ee!important;border-left:5px solid #111827!important;border-radius:12px!important;box-shadow:0 3px 12px rgba(15,23,42,.035)!important}
-.section-band-kicker{font-size:.66rem!important;font-weight:900!important;letter-spacing:.085em!important;text-transform:uppercase!important;color:#ef4444!important;margin-bottom:.18rem!important}
-.section-band-title{font-size:1.08rem!important;font-weight:900!important;color:#111827!important;letter-spacing:-.015em!important;line-height:1.2!important;text-transform:uppercase!important}
+:root{--p:#333333}
+.section-title{margin:0 0 1rem!important;color:#333333!important;font-size:1.28rem!important;font-weight:900!important;letter-spacing:-.02em;text-transform:uppercase}
+.section-band{margin:0 0 .95rem!important;padding:.82rem 1rem!important;background:#fff!important;border:1px solid #e1e1e1!important;border-left:5px solid #333333!important;border-radius:12px!important;box-shadow:0 3px 12px rgba(15,23,42,.035)!important}
+.section-band-kicker{font-size:.66rem!important;font-weight:900!important;letter-spacing:.085em!important;text-transform:uppercase!important;color:#8a6500!important;margin-bottom:.18rem!important}
+.section-band-title{font-size:1.08rem!important;font-weight:900!important;color:#333333!important;letter-spacing:-.015em!important;line-height:1.2!important;text-transform:uppercase!important}
 .section-band-note{margin-top:.22rem!important;color:#667085!important;font-size:.75rem!important;line-height:1.35!important}
-.topic-divider{height:1px!important;background:#cbd5e1!important;margin:1.55rem 0 1.05rem!important;width:100%!important}
+.topic-divider{height:1px!important;background:#ddd!important;margin:1.55rem 0 1.05rem!important;width:100%!important}
 .api-status-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.8rem}
-.api-status-name{font-size:.92rem;font-weight:900;color:#111827;text-transform:uppercase}
-.api-status-filter{margin-top:.18rem;font-size:.7rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.025em}
+.api-status-name{font-size:.92rem;font-weight:900;color:#333333;text-transform:uppercase}
+.api-status-filter{margin-top:.18rem;font-size:.7rem;color:#525252;font-weight:700;text-transform:uppercase;letter-spacing:.025em}
 .api-status-badge{display:inline-flex;padding:.28rem .52rem;border-radius:999px;background:#dcfce7;color:#166534;font-size:.68rem;font-weight:900;letter-spacing:.035em}
 .api-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem;margin:.25rem 0 .8rem}
-.api-stat{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:.7rem .78rem}
-.api-stat-label{font-size:.61rem;font-weight:900;letter-spacing:.055em;text-transform:uppercase;color:#64748b;margin-bottom:.28rem}
-.api-stat-value{font-size:.92rem;font-weight:900;color:#111827;line-height:1.15;overflow-wrap:anywhere}
-.setta-empty-state{border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;padding:.85rem 1rem;color:#64748b;font-size:.76rem;font-weight:800;letter-spacing:.02em;text-transform:uppercase;margin:.1rem 0 .5rem}
-.intro,.panel{background:#fff;border:1px solid #e5e8ee;border-radius:14px}
+.api-stat{background:#f5f5f5;border:1px solid #e5e7eb;border-radius:10px;padding:.7rem .78rem}
+.api-stat-label{font-size:.61rem;font-weight:900;letter-spacing:.055em;text-transform:uppercase;color:#525252;margin-bottom:.28rem}
+.api-stat-value{font-size:.92rem;font-weight:900;color:#333333;line-height:1.15;overflow-wrap:anywhere}
+.setta-empty-state{border:1px dashed #ddd;border-radius:12px;background:#f5f5f5;padding:.85rem 1rem;color:#525252;font-size:.76rem;font-weight:800;letter-spacing:.02em;text-transform:uppercase;margin:.1rem 0 .5rem}
+.intro,.panel{background:#fff;border:1px solid #e1e1e1;border-radius:14px}
 .intro{padding:.9rem 1rem;color:#555c66;margin-bottom:1rem;box-shadow:0 3px 12px rgba(15,23,42,.035)}
 .kpi-card{position:relative;min-height:116px;padding:16px 18px 15px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;box-shadow:0 4px 16px rgba(15,23,42,.055);overflow:hidden;transition:transform .12s ease,box-shadow .12s ease}
 .kpi-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--accent)}
 .kpi-card.selected{outline:2px solid var(--accent);outline-offset:1px}
 .kpi-header{display:flex;align-items:center;gap:8px;margin-bottom:11px}
 .kpi-dot{width:9px;height:9px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft);flex:0 0 auto}
-.kpi-label{color:#475569;font-size:.72rem!important;font-weight:900!important;line-height:1.15;text-transform:uppercase;letter-spacing:.025em}
-.kpi-value{color:#0f172a;font-size:2rem;font-weight:800;line-height:1;letter-spacing:-.035em}
-.kpi-delta{margin-top:8px;color:#64748b;font-size:.66rem!important;font-weight:700!important;text-transform:uppercase;letter-spacing:.02em}
+.kpi-label{color:#525252;font-size:.72rem!important;font-weight:900!important;line-height:1.15;text-transform:uppercase;letter-spacing:.025em}
+.kpi-value{color:#333333;font-size:2rem;font-weight:800;line-height:1;letter-spacing:-.035em}
+.kpi-delta{margin-top:8px;color:#525252;font-size:.66rem!important;font-weight:700!important;text-transform:uppercase;letter-spacing:.02em}
 [data-testid="stDataFrame"],[data-testid="stDataEditor"]{border:1px solid #d9dee7;border-radius:12px;overflow:hidden;box-shadow:0 5px 18px rgba(15,23,42,.06);background:#fff}
-[data-testid="stDataFrame"] [role="columnheader"],[data-testid="stDataEditor"] [role="columnheader"]{font-weight:800!important;text-transform:uppercase!important;letter-spacing:.025em!important;background:#f8fafc!important}
+[data-testid="stDataFrame"] [role="columnheader"],[data-testid="stDataEditor"] [role="columnheader"]{font-weight:800!important;text-transform:uppercase!important;letter-spacing:.025em!important;background:#f5f5f5!important}
 [data-testid="stDataFrame"] [role="gridcell"],[data-testid="stDataEditor"] [role="gridcell"]{border-color:#eef1f5!important}
-[data-testid="stVerticalBlockBorderWrapper"]{border-color:#e5e8ee!important;border-radius:14px!important;background:#fff!important;box-shadow:0 3px 12px rgba(15,23,42,.035)!important}
-[data-testid="stTabs"] button{font-weight:800!important;text-transform:uppercase!important;letter-spacing:.015em!important}
-div[data-testid="stMarkdownContainer"] h1,div[data-testid="stMarkdownContainer"] h2,div[data-testid="stMarkdownContainer"] h3,div[data-testid="stMarkdownContainer"] h4{text-transform:uppercase}
+[data-testid="stVerticalBlockBorderWrapper"]{border-color:#e1e1e1!important;border-radius:14px!important;background:#fff!important;box-shadow:0 3px 12px rgba(15,23,42,.035)!important}
+[data-testid="stTabs"] button{font-weight:800!important;text-transform:none!important;letter-spacing:0!important}
 [data-testid="stAlert"]{border-radius:12px!important;box-shadow:0 3px 12px rgba(15,23,42,.035)!important}
-button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:#111827!important;border-color:#111827!important;color:#fff!important}
+button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:#333333!important;border-color:#333333!important;color:#fff!important}
 .footer{text-align:center;color:#9298a1;font-size:.72rem;padding-top:1.2rem}
 .dashboard-kpi-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.85rem;margin:.15rem 0 .25rem}
-.dashboard-kpi{--kpi-accent:#2563eb;--kpi-soft:#eff6ff;position:relative;min-width:0;min-height:142px;padding:1rem 1.05rem .9rem;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 5px 18px rgba(15,23,42,.055);overflow:hidden;display:flex;flex-direction:column}
+.dashboard-kpi{--kpi-accent:#8a6500;--kpi-soft:#eff6ff;position:relative;min-width:0;min-height:142px;padding:1rem 1.05rem .9rem;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 5px 18px rgba(15,23,42,.055);overflow:hidden;display:flex;flex-direction:column}
 .dashboard-kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--kpi-accent)}
-.dashboard-kpi--blue{--kpi-accent:#2563eb;--kpi-soft:#dbeafe}.dashboard-kpi--cyan{--kpi-accent:#0891b2;--kpi-soft:#cffafe}.dashboard-kpi--green{--kpi-accent:#16a34a;--kpi-soft:#dcfce7}.dashboard-kpi--red{--kpi-accent:#ef4444;--kpi-soft:#fee2e2}.dashboard-kpi--violet{--kpi-accent:#7c3aed;--kpi-soft:#ede9fe}.dashboard-kpi--amber{--kpi-accent:#d97706;--kpi-soft:#ffedd5}
+.dashboard-kpi--blue{--kpi-accent:#8a6500;--kpi-soft:#fff3cc}.dashboard-kpi--cyan{--kpi-accent:#717171;--kpi-soft:#cffafe}.dashboard-kpi--green{--kpi-accent:#16a34a;--kpi-soft:#dcfce7}.dashboard-kpi--red{--kpi-accent:#ef4444;--kpi-soft:#fee2e2}.dashboard-kpi--violet{--kpi-accent:#545454;--kpi-soft:#e9e9e9}.dashboard-kpi--amber{--kpi-accent:#d97706;--kpi-soft:#ffedd5}
 .dashboard-kpi-top{display:flex;align-items:center;justify-content:space-between;gap:.7rem;margin-bottom:.48rem}
-.dashboard-kpi-eyebrow{color:#64748b;font-size:.59rem;font-weight:900;letter-spacing:.085em;text-transform:uppercase}
+.dashboard-kpi-eyebrow{color:#525252;font-size:.59rem;font-weight:900;letter-spacing:.085em;text-transform:uppercase}
 .dashboard-kpi-status-dot{width:9px;height:9px;border-radius:999px;background:var(--kpi-accent);box-shadow:0 0 0 4px var(--kpi-soft);flex:0 0 auto}
-.dashboard-kpi-label{min-height:2.15em;color:#475569;font-size:.72rem;font-weight:850;line-height:1.18;letter-spacing:.015em;text-transform:uppercase}
-.dashboard-kpi-value{margin:.38rem 0 0;color:#0f172a;font-size:clamp(1.65rem,2vw,2.15rem);font-weight:850;line-height:1;letter-spacing:-.045em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dashboard-kpi-label{min-height:2.15em;color:#525252;font-size:.72rem;font-weight:850;line-height:1.18;letter-spacing:.015em;text-transform:uppercase}
+.dashboard-kpi-value{margin:.38rem 0 0;color:#333333;font-size:clamp(1.65rem,2vw,2.15rem);font-weight:850;line-height:1;letter-spacing:-.045em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dashboard-kpi-caption{margin-top:auto;padding-top:.65rem;color:#718096;font-size:.62rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
 .dashboard-kpi-progress{height:6px;margin:.62rem 0 0;background:#eef2f7;border-radius:999px;overflow:hidden}
 .dashboard-kpi-progress span{display:block;height:100%;border-radius:999px;background:var(--kpi-accent)}
 .dashboard-chart-grid{display:grid;grid-template-columns:minmax(320px,.85fr) minmax(460px,1.35fr);gap:.9rem;margin:.1rem 0 .25rem}
 .dashboard-chart-card{min-width:0;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 5px 18px rgba(15,23,42,.045);padding:1rem 1.05rem .8rem;overflow:hidden}
 .dashboard-chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin:0 0 .35rem}
-.dashboard-chart-kicker{font-size:.59rem;font-weight:900;letter-spacing:.085em;color:#64748b;text-transform:uppercase}
-.dashboard-chart-title{margin:.2rem 0 0;font-size:.86rem;font-weight:900;color:#111827;text-transform:uppercase}
-.dashboard-chart-note{margin:.25rem 0 0;color:#64748b;font-size:.68rem;line-height:1.35}
-.dashboard-empty{min-height:205px;display:flex;align-items:center;justify-content:center;text-align:center;color:#64748b;font-size:.78rem;font-weight:700;border:1px dashed #d8dee8;border-radius:10px;background:#f8fafc}
+.dashboard-chart-kicker{font-size:.59rem;font-weight:900;letter-spacing:.085em;color:#525252;text-transform:uppercase}
+.dashboard-chart-title{margin:.2rem 0 0;font-size:.86rem;font-weight:900;color:#333333;text-transform:uppercase}
+.dashboard-chart-note{margin:.25rem 0 0;color:#525252;font-size:.68rem;line-height:1.35}
+.dashboard-empty{min-height:205px;display:flex;align-items:center;justify-content:center;text-align:center;color:#525252;font-size:.78rem;font-weight:700;border:1px dashed #d8dee8;border-radius:10px;background:#f5f5f5}
 @media(max-width:1100px){.dashboard-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-chart-grid{grid-template-columns:1fr}}
 @media(max-width:650px){.dashboard-kpi-grid{grid-template-columns:1fr;gap:.65rem}.dashboard-kpi{min-height:126px;padding:.9rem}.dashboard-kpi-label{min-height:0}.dashboard-kpi-value{font-size:1.75rem}}
 @media(max-width:900px){.section-title{font-size:1.14rem!important}.api-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -1119,45 +1110,19 @@ def _current_inventory_page():
  return value
 
 with st.sidebar:
- st.markdown(
-  '<div class="sidebar-brand">'
-  '<div class="sidebar-brand-title">GESTÃO DE ESTOQUE</div>'
-  '<div class="sidebar-brand-sub">CONTROLE OPERACIONAL SETTA</div>'
-  '</div>'
-  '<div class="sidebar-section-label">NAVEGAÇÃO</div>',
-  unsafe_allow_html=True,
- )
-
+ st.html('<div class="sidebar-brand">Gestão de estoque</div>')
  _current=_current_inventory_page()
  for _nav_index,_nav_page in enumerate(_visible_inventory_pages()):
+  if _nav_page=='Configurações':
+   st.html('<div class="sidebar-section-label admin">Administração</div>')
   st.button(
-   str(_nav_page).upper(),
+   setta_shell.route_title(_nav_page),
    key=f'setta_nav_{_nav_index}',
    type='primary' if _nav_page==_current else 'secondary',
    use_container_width=True,
    on_click=_set_inventory_page,
    args=(_nav_page,),
   )
-
- _sidebar_user=_auth_user()
- if _sidebar_user:
-  _sidebar_name=str(_sidebar_user.get('full_name') or _sidebar_user.get('username') or 'USUÁRIO SETTA')
-  st.markdown(
-   '<div class="sidebar-divider"></div>'
-   '<div class="sidebar-section-label">SESSÃO</div>'
-   '<div class="sidebar-status-card">'
-   f'<div class="sidebar-status-name">{_sidebar_name}</div>'
-   f'<div class="sidebar-status-meta">{_session_profile().upper()}</div>'
-   '</div>',
-   unsafe_allow_html=True,
-  )
-  if st.button('SAIR',key='setta_auth_logout',use_container_width=True):
-   try:
-    setta_auth.logout(central_data.supabase_key(),_session_auth_token())
-   except Exception:
-    pass
-   st.session_state.pop('_setta_auth_user',None)
-   st.rerun()
 
  _sidebar_status_slot=st.empty()
  _sidebar_status_slot.markdown(
@@ -1168,6 +1133,22 @@ with st.sidebar:
   unsafe_allow_html=True,
  )
 
+ _sidebar_user=_auth_user()
+ if _sidebar_user:
+  with st.container(key='setta_account_footer'):
+   _sidebar_name=escape(str(_sidebar_user.get('full_name') or _sidebar_user.get('username') or 'Usuário Setta'))
+   st.html(
+    '<div class="sidebar-status-card"><div class="sidebar-status-name">'
+    f'{_sidebar_name}</div><div class="sidebar-status-meta">{_session_profile()}</div></div>'
+   )
+   if st.button('Sair',key='setta_auth_logout',use_container_width=True):
+    try:
+     setta_auth.logout(central_data.supabase_key(),_session_auth_token())
+    except Exception:
+     pass
+    st.session_state.pop('_setta_auth_user',None)
+    _setta_close_sidebar()
+    st.rerun()
 
 
 if st.session_state.get('_operational_persistence_error'):
@@ -1178,18 +1159,12 @@ if st.session_state.get('_operational_persistence_error'):
 
 with st.container(key='setta_top_controls'):
  st.button(
-  '☰',
+  'Fechar menu lateral' if _setta_sidebar_is_open() else 'Abrir menu lateral',
   key='setta_drawer_toggle',
-  help='Abrir/fechar menu',
+  icon=':material/close:' if _setta_sidebar_is_open() else ':material/menu:',
   use_container_width=True,
   on_click=_setta_toggle_sidebar,
  )
-
-_main_logo=logo_uri()
-_logo_html=(f'<img src="{_main_logo}" alt="SETTA">' if _main_logo else '<div style="font-size:2rem;font-weight:800;color:#202124">SETTA</div>')
-st.markdown(f'<div class="setta-logo-card">{_logo_html}</div>',unsafe_allow_html=True)
-st.markdown('<h1 class="app-title">GESTÃO DE ESTOQUE | SETTA</h1>',unsafe_allow_html=True)
-st.markdown('<p class="app-sub">INVENTÁRIO ROTATIVO • ACURÁCIA • CONTAGENS • HISTÓRICO</p>',unsafe_allow_html=True)
 
 _render_setta_auth_gate()
 
@@ -1241,6 +1216,8 @@ _sidebar_status_slot.markdown(
 )
 
 active=_current_inventory_page()
+if active!='Inventário Rotativo':
+ setta_shell.render_page(st,active)
 
 # Contagens e novas análises podem ser feitas por outro operador na mesma hora.
 # Atualiza ao entrar na tela e periodicamente, sem descaracterizar o fluxo local.
@@ -1278,7 +1255,6 @@ def _valid_inventory_rows(inv):
 
 # Dashboard
 if active=='Dashboard':
- st.markdown('<div class="section-title">DASHBOARD OPERACIONAL</div>',unsafe_allow_html=True)
  section_band('01 · VISÃO GERAL','INDICADORES DO ESTOQUE')
  if st.session_state.db is None:st.info('Aguardando sincronização automática das fontes ANALÍTICO e ENDEREÇO pela API.')
  else:
@@ -1349,11 +1325,18 @@ if active=='Dashboard':
 
 # Inventory
 elif active=='Inventário Rotativo':
- section_band('01 · INVENTÁRIO','CONTROLE E EXECUÇÃO')
+ with st.container(key='inv_page_head'):
+  _title_col,_action_col=st.columns([4,1],vertical_alignment='bottom')
+  with _title_col:
+   setta_shell.render_page(st,active)
+  with _action_col:
+   if st.session_state.db is not None:
+    with st.container(key='inv_new_button'):
+     _new_label=config['new_inventory_text']
+     if str(_new_label).strip().upper()=='NOVO INVENTÁRIO':_new_label='Novo inventário'
+     if st.button(_new_label,type='primary',icon=':material/add:'):st.session_state.new_inv=True;st.rerun()
  if st.session_state.db is None:st.info('Aguardando sincronização automática da base de estoque pela API.')
  else:
-  _,b=st.columns([2,1])
-  if b.button(config['new_inventory_text'],type='primary',use_container_width=True):st.session_state.new_inv=True;st.rerun()
   if st.session_state.new_inv:
    with st.container(border=True):
     a,b,c=st.columns(3)
@@ -1431,26 +1414,44 @@ elif active=='Inventário Rotativo':
        else:
         st.error('Não foi possível salvar o inventário. Tente novamente.')
     if y.button('Cancelar'):st.session_state.new_inv=False;st.rerun()
-  def render_inventory_cards(items):
-   for inv in items:
-    with st.container(border=True):
-     _card_rows=_valid_inventory_rows(inv);s=len(_card_rows);prod=len({r['codigo'] for r in _card_rows});a,b,c,d=st.columns([2.2,1.5,1,1]);a.markdown(f'**{inv["documento"]}**');a.caption(f'Ciclo {inv["ciclo"]} · {inv["data"]}');b.write(f'**{inv["status"]}**');c.metric('Produtos',prod);d.metric('Posições',s)
+  def render_inventory_cards(items,tab_key):
+   with st.container(key=f'inv_rows_{tab_key}'):
+    st.html('<div class="inv-lot-head" aria-hidden="true"><span>Lote · abertura</span><span>Produtos</span><span>Posições</span><span>Situação</span><span>Ação</span></div>')
+    for inv in items:
+     _doc=str(inv['documento'])
+     _row_key=hashlib.sha256(_doc.encode()).hexdigest()[:16]
+     _card_rows=_valid_inventory_rows(inv)
+     _positions=len(_card_rows)
+     _products=len({r['codigo'] for r in _card_rows})
      _show_delete=_can_manage_inventory() and inv.get('status')!='FECHADO'
-     _open_col,_delete_col=st.columns(2) if _show_delete else (st.container(),None)
-     if _open_col.button('ABRIR',key='op_'+inv['documento'],use_container_width=True):
-      st.session_state.selected=inv['documento'];st.rerun()
-     if _delete_col is not None and _delete_col.button('EXCLUIR',key='del_'+inv['documento'],use_container_width=True):
-      st.session_state.delete_inv_target=inv['documento'];st.rerun()
+     with st.container(key=f'inv_lot_row_{tab_key}_{_row_key}'):
+      a,b,c,d,e=st.columns([2.15,.85,.85,1.3,1.5],vertical_alignment='center')
+      with a:
+       st.html(f'<div class="inv-lot-id">{escape(_doc)}</div><div class="inv-lot-date">Ciclo {escape(str(inv["ciclo"]))} · {escape(str(inv["data"]))}</div>')
+      with b:
+       st.html(setta_shell.lot_count(_products,'produto','produtos'))
+      with c:
+       st.html(setta_shell.lot_count(_positions,'posição','posições'))
+      with d:
+       st.html(setta_shell.status_badge(inv['status']))
+      with e:
+       with st.container(key=f'inv_lot_actions_{_row_key}'):
+        if st.button('Abrir',key='op_'+_doc,help=f'Abrir inventário {_doc}'):
+         st.session_state.selected=inv['documento'];st.rerun()
+        if _show_delete and st.button('Excluir',key='del_'+_doc,help=f'Excluir inventário {_doc}'):
+         st.session_state.delete_inv_target=inv['documento'];st.rerun()
   all_inv=sorted(st.session_state.inventories.values(),key=lambda x:x.get('criado_em',''),reverse=True)
   open_inv=[x for x in all_inv if x.get('status')!='FECHADO']
   closed_inv=[x for x in all_inv if x.get('status')=='FECHADO']
-  tab_open,tab_closed=st.tabs([f'EM ABERTO ({len(open_inv)})',f'FECHADOS ({len(closed_inv)})'])
-  with tab_open:
-   if open_inv:render_inventory_cards(open_inv)
-   else:st.info('Nenhum inventário em aberto.')
-  with tab_closed:
-   if closed_inv:render_inventory_cards(closed_inv)
-   else:st.info('Nenhum inventário fechado.')
+  setta_shell.render_summary(st,cycle(),len(open_inv),len(closed_inv))
+  with st.container(key='inv_lots'):
+   tab_open,tab_closed=st.tabs([f'Em aberto ({len(open_inv)})',f'Fechados ({len(closed_inv)})'])
+   with tab_open:
+    if open_inv:render_inventory_cards(open_inv,'open')
+    else:st.info('Nenhum inventário em aberto.')
+   with tab_closed:
+    if closed_inv:render_inventory_cards(closed_inv,'closed')
+    else:st.info('Nenhum inventário fechado.')
   if st.session_state.pop('_inventory_delete_success',None):
    st.success('INVENTÁRIO EXCLUÍDO. AS CONTAGENS FORAM DESCARTADAS.')
   if st.session_state.get('_inventory_delete_error'):
