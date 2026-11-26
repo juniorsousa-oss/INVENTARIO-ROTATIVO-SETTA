@@ -52,10 +52,10 @@ O Supabase é a fonte persistente de configurações, inventários, ciclos e inc
 
 As gravações principais não substituem mais o JSON operacional completo:
 
-- `inventory_document_upsert` grava somente o documento alterado;
+- `inventory_document_upsert` compara a versão lida com o documento oficial e grava somente quando ela ainda é atual;
 - `inventory_report_upsert` grava somente a inconsistência alterada;
 - `inventory_cycles_merge` é usado na migração de ciclos antigos;
-- `inventory_close_atomic` encerra documento, ciclos e inconsistências na mesma transação;
+- `inventory_close_atomic` encerra documento, ciclos e inconsistências na mesma transação e não duplica ciclos em reenvios;
 - `inventory_next_document` gera a numeração diária atomicamente no banco.
 
 As funções PostgreSQL correspondentes são `SECURITY DEFINER` e só concedem execução a `service_role`.
@@ -186,3 +186,9 @@ O CI compila os módulos e executa `scripts/validate_base.py`. Entre outras regr
 A persistência atual já evita sobrescrita global entre documentos diferentes, mas cada documento de inventário ainda é salvo como um JSON único. Para colaboração simultânea de vários operadores no **mesmo documento**, a evolução recomendada é normalizar `documentos`, `itens` e `contagens` em tabelas separadas.
 
 Essa evolução não é necessária para validar o build atual, mas é o próximo passo caso o mesmo inventário passe a ser contado simultaneamente por várias pessoas.
+
+### Publicar a proteção de gravação dos lotes
+
+Aplique primeiro `supabase/migrations/20261126_inventory_document_guard.sql` na Central e só depois publique o Streamlit. A versão antiga pode consultar, mas não consegue gravar lotes depois da migração; avise os operadores da transição e peça que recarreguem a sessão. Não publique o cliente novo em uma Central sem a migração. A Edge Function não precisa ser substituída.
+
+O teste em `tests/sql/inventory_document_guard.sql` usa lotes artificiais e deve rodar somente em um PostgreSQL isolado, nunca na Central de produção.

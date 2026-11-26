@@ -124,12 +124,22 @@ def next_inventory_document() -> str:
     return documento
 
 
-def save_inventory_document(documento: str, document: dict) -> dict:
-    return api_call(
+def _guarded_document_write(action: str, payload: dict, expected: dict | None,
+                            timeout: int) -> dict:
+    candidate = dict(payload["document"])
+    candidate["_setta_expected_document"] = expected
+    data = api_call(action, {**payload, "document": candidate}, timeout=timeout).get("data") or {}
+    if data.get("ok") is not True or data.get("protected") is not True:
+        raise RuntimeError("INVENTARIO_CONFIRMACAO_DA_CENTRAL_AUSENTE")
+    return data
+
+
+def save_inventory_document(documento: str, document: dict, *, expected: dict | None) -> dict:
+    return _guarded_document_write(
         "inventory_document_upsert",
-        {"documento": str(documento), "document": document or {}},
-        timeout=45,
-    ).get("data") or {}
+        {"documento": str(documento), "document": document},
+        expected, timeout=45,
+    )
 
 
 def save_inventory_report(report_id: str, report: dict) -> dict:
@@ -247,18 +257,20 @@ def close_inventory_atomic(
     cycle_codes: list[str],
     reports: dict,
     auth_token: str,
+    *,
+    expected: dict,
 ) -> dict:
-    return api_call(
+    return _guarded_document_write(
         "inventory_close_atomic",
         {
             "documento": str(documento),
-            "document": document or {},
+            "document": document,
             "cycle_codes": [str(x) for x in (cycle_codes or [])],
             "reports": reports or {},
             "auth_token": str(auth_token or "").strip(),
         },
-        timeout=60,
-    ).get("data") or {}
+        expected, timeout=60,
+    )
 
 
 def derived_status(keys: list[str]) -> dict[str, dict]:

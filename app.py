@@ -198,6 +198,7 @@ def firestore_load_eligible():
 
 
 _remote_operational_state={}
+_remote_operational_loaded=False
 _force_operational_reload=(
  st.session_state.get('_inventory_data_epoch')!=INVENTORY_DATA_EPOCH
 )
@@ -209,6 +210,7 @@ if _force_operational_reload or any(
   _remote_operational_state=central_data.operational_state(
    ['cfg','inventories','cycles','reports']
   )
+  _remote_operational_loaded=True
   st.session_state.pop('_operational_persistence_error',None)
  except Exception as exc:
   _remote_operational_state={}
@@ -230,7 +232,7 @@ if 'db' not in st.session_state: st.session_state.db=None
 if 'pos' not in st.session_state: st.session_state.pos=None
 if 'eligible' not in st.session_state: st.session_state.eligible=[]
 
-if _force_operational_reload:
+if _force_operational_reload and _remote_operational_loaded:
  _saved_inventories=_remote_operational_state.get('inventories',{}) or {}
  _saved_cycles=_remote_operational_state.get('cycles',{}) or {}
  _saved_reports=_remote_operational_state.get('reports',{}) or {}
@@ -261,14 +263,10 @@ if 'new_inv' not in st.session_state: st.session_state.new_inv=False
 cfg=st.session_state.cfg
 config=cfg
 
-# Migração transparente do estado local antigo para a persistência atômica.
-# Executa uma vez por sessão e apenas quando a chave ainda não existe remotamente.
-if not st.session_state.get('_operational_state_migration_checked'):
+# O SQLite é contingência de leitura dos lotes. Uma cópia local não é
+# enviada automaticamente como se fosse a versão oficial de um lote.
+if _remote_operational_loaded and not st.session_state.get('_operational_state_migration_checked'):
  try:
-  if 'inventories' not in _remote_operational_state and st.session_state.inventories:
-   for _doc,_inv in st.session_state.inventories.items():
-    central_data.save_inventory_document(str(_doc),_inv)
-
   if 'cycles' not in _remote_operational_state and st.session_state.cycles:
    central_data.merge_inventory_cycles(st.session_state.cycles)
 
@@ -713,18 +711,72 @@ def _render_divergence_treatment(r,q,key_prefix):
   return True
  return False
 
+def _inventory_write_error(doc, exc):
+ message=str(exc)
+ if 'INVENTARIO_CONFLITO_DE_VERSAO' in message or 'INVENTARIO_EXCLUIDO' in message:
+  st.session_state['_inventory_conflict_document']=doc
+  return 'Outra sessão alterou este lote. Atualize o lote antes de salvar novamente.'
+ if 'INVENTARIO_CLIENTE_DESATUALIZADO' in message or 'INVENTARIO_CONFIRMACAO_DA_CENTRAL_AUSENTE' in message:
+  return 'A Central não confirmou a versão de gravação. Recarregue o app antes de tentar novamente.'
+ return 'A Central não confirmou a gravação. Confira a conexão e tente novamente. O app não avançou a etapa.'
+
+
+def _retry_inventory_refresh(doc):
+ try:
+  _refresh_inventory_documents()
+  st.session_state.pop('_inventory_conflict_document',None)
+  st.session_state.pop('_operational_persistence_error',None)
+  if doc not in st.session_state.inventories:
+   st.session_state.selected=None
+   st.session_state['_inventory_refresh_error']='Este lote não está mais disponível.'
+  else:
+   st.session_state.pop('_inventory_refresh_error',None)
+ except Exception:
+  st.session_state['_operational_persistence_error']='A Central não confirmou a atualização. Tente atualizar o lote novamente.'
+
+
+def _save_confirmed_inventory_cache(key):
+ # Se a Central confirmou, falha do cache local não cancela a gravação.
+ try:
+  save(key,st.session_state[key])
+ except (OSError,sqlite3.Error):
+  pass
+
+
 def persist_inv(inv):
  doc=str(inv.get('documento') or '').strip()
  if not doc:return False
- st.session_state.inventories[doc]=inv
- save('inventories',st.session_state.inventories)
- try:
-  central_data.save_inventory_document(doc,inv)
-  st.session_state.pop('_operational_persistence_error',None)
-  return True
- except Exception as exc:
-  st.session_state['_operational_persistence_error']=str(exc)
+ if st.session_state.get('_inventory_conflict_document')==doc:
   return False
+ expected=copy.deepcopy(st.session_state.inventories.get(doc))
+ try:
+  central_data.save_inventory_document(doc,inv,expected=expected)
+ except Exception as exc:
+  st.session_state['_operational_persistence_error']=_inventory_write_error(doc,exc)
+  return False
+ st.session_state.inventories[doc]=inv
+ _save_confirmed_inventory_cache('inventories')
+ st.session_state.pop('_operational_persistence_error',None)
+ return True
+
+
+def _commit_inventory_action(inv):
+ if persist_inv(inv):
+  st.rerun()
+ st.error(st.session_state.get('_operational_persistence_error') or 'Gravação não confirmada. Atualize o lote e tente novamente.')
+ doc=inv.get('documento')
+ if doc and st.session_state.get('_inventory_conflict_document')==doc:
+  st.button('Atualizar lote',key='reload_conflicted_inventory_after_write',on_click=_retry_inventory_refresh,args=(doc,))
+ st.stop()
+
+
+def _confirm_matching_first_counts(rows):
+ for r in rows:
+  if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))<1e-9:
+   r['contagem_final']=last(r)
+   r['resultado_final']='SISTEMA CONFIRMADO'
+   r['status']='FINALIZADO'
+
 
 def delete_open_inventory(documento):
  doc=str(documento or '').strip()
@@ -858,9 +910,14 @@ def close_inv(inv):
   )
   return False
  st.session_state.pop('_inventory_close_error',None)
- before_inv=copy.deepcopy(inv)
- before_cycles=copy.deepcopy(st.session_state.cycles)
- before_reports=copy.deepcopy(st.session_state.reports)
+ if st.session_state.get('_inventory_conflict_document')==doc:
+  return False
+ expected=copy.deepcopy(st.session_state.inventories.get(doc))
+ if not expected:
+  st.session_state['_inventory_close_error']='Atualize o lote antes de encerrar.'
+  return False
+ cycles=copy.deepcopy(st.session_state.cycles)
+ reports=copy.deepcopy(st.session_state.reports)
 
  try:
   for r in _valid_rows:
@@ -872,7 +929,7 @@ def close_inv(inv):
   if not inv.get('ciclo_marcado'):
    cycle_codes=sorted({str(r['codigo']) for r in _valid_rows if r['contagens']})
    for code in cycle_codes:
-    st.session_state.cycles[code]=int(st.session_state.cycles.get(code,0))+1
+    cycles[code]=int(cycles.get(code,0))+1
    inv['ciclo_marcado']=True
 
   inv['status']='FECHADO'
@@ -880,7 +937,7 @@ def close_inv(inv):
   inv['encerrado_por']=_session_operator()
 
   report_updates={}
-  for rid,rep in st.session_state.reports.items():
+  for rid,rep in reports.items():
    if rep.get('status')=='ABERTO' and any(
     str(r['codigo'])==str(rep.get('codigo'))
     and str(r['endereco'])==str(rep.get('endereco'))
@@ -898,22 +955,21 @@ def close_inv(inv):
    cycle_codes,
    report_updates,
    _session_auth_token(),
+   expected=expected,
   )
 
   st.session_state.inventories[doc]=inv
-  save('inventories',st.session_state.inventories)
-  save('cycles',st.session_state.cycles)
-  save('reports',st.session_state.reports)
+  st.session_state.cycles=cycles
+  st.session_state.reports=reports
+  for key in ('inventories','cycles','reports'):
+   _save_confirmed_inventory_cache(key)
   st.session_state.pop('_operational_persistence_error',None)
   return True
  except Exception as exc:
-  st.session_state.inventories[doc]=before_inv
-  st.session_state.cycles=before_cycles
-  st.session_state.reports=before_reports
   message=str(exc)
   if 'SESSION_INVALID_OR_EXPIRED' in message or 'AUTH_REQUIRED' in message:
    st.session_state.pop('_setta_auth_user',None)
-  st.session_state['_operational_persistence_error']=message
+  st.session_state['_operational_persistence_error']=_inventory_write_error(doc,exc)
   return False
 
 
@@ -1397,7 +1453,7 @@ elif active=='Inventário Rotativo':
        st.error(f'Não foi possível gerar o número do inventário: {exc}')
       else:
        stamp=now_local()
-       st.session_state.inventories[doc]={
+       _new_document={
         'documento':doc,
         'data':stamp.strftime('%d/%m/%Y %H:%M'),
         'responsavel':_session_operator(),
@@ -1409,12 +1465,12 @@ elif active=='Inventário Rotativo':
         'criado_em':stamp.isoformat(),
         'ciclo_marcado':False,
        }
-       if persist_inv(st.session_state.inventories[doc]):
+       if persist_inv(_new_document):
         st.session_state.selected=doc
         st.session_state.new_inv=False
         st.rerun()
        else:
-        st.error('Não foi possível salvar o inventário. Tente novamente.')
+        st.error(st.session_state.get('_operational_persistence_error') or 'Não foi possível salvar o inventário. Tente novamente.')
     if y.button('Cancelar'):st.session_state.new_inv=False;st.rerun()
   def render_inventory_cards(items,tab_key):
    with st.container(key=f'inv_rows_{tab_key}'):
@@ -1476,7 +1532,12 @@ elif active=='Inventário Rotativo':
    st.session_state.pop('delete_inv_target',None)
   doc=st.session_state.selected
   if doc in st.session_state.inventories:
-   inv=st.session_state.inventories[doc];st.divider();st.markdown(f'### Inventário {doc} — {inv["status"]}')
+   # Toda interação trabalha em uma cópia até a Central confirmar.
+   inv=copy.deepcopy(st.session_state.inventories[doc])
+   st.divider();st.markdown(f'### Inventário {doc} — {inv["status"]}')
+   if st.session_state.get('_inventory_conflict_document')==doc:
+    st.warning('Outra sessão alterou este lote. Atualize para conferir o que já foi salvo.')
+    st.button('Atualizar lote',key='reload_conflicted_inventory',on_click=_retry_inventory_refresh,args=(doc,))
    _document_scope_rows=_valid_inventory_rows(inv)
    _removed_scope=len(inv.get('rows',[]))-len(_document_scope_rows)
    if _removed_scope:
@@ -1496,10 +1557,8 @@ elif active=='Inventário Rotativo':
      st.markdown('#### 1ª CONTAGEM CONCLUÍDA')
      if st.button('FINALIZAR 1ª CONTAGEM',type='primary',use_container_width=True,key='finish_first_count'):
       inv['status']='AGUARDANDO ANÁLISE'
-      if persist_inv(inv):
-       st.rerun()
-      else:
-       st.error('Não foi possível finalizar a 1ª contagem.')
+      _confirm_matching_first_counts(_document_scope_rows)
+      _commit_inventory_action(inv)
      st.success('Todas as posições foram contadas. Finalize acima para encaminhar o inventário à análise do Gestor.')
     else:
      st.info(f'Faltam {pending_pos} posição(ões) para liberar a finalização.')
@@ -1510,38 +1569,32 @@ elif active=='Inventário Rotativo':
       a,b,c=st.columns([1.1,3,1.3]);a.markdown(f'**{r["codigo"]}**');b.write(f'{r["descricao"]}\n\n**Endereço:** {r["endereco"]}');c.write('**Qtd. sistema:** OCULTA' if inv['blind_count'] else f'**Qtd. sistema:** {fn(r["qtd_sistema"])}');x,y=st.columns([1,2]);q=x.number_input('Contagem',0.0,step=.001,format='%.3f',key='q1_'+r['id']);cm=y.text_input('Comentário (opcional)',key='cm1_'+r['id'])
       if st.button('Salvar contagem',key='sv1_'+r['id'],type='primary'):
        addcount(r,q,cm,'1ª CONTAGEM')
-       if persist_inv(inv):st.rerun()
-       else:st.error('Não foi possível salvar a contagem.')
+       _commit_inventory_action(inv)
    elif _can_manage_inventory() and inv['status']=='AGUARDANDO ANÁLISE':
     st.markdown('#### Análise da 1ª contagem')
-    # 1ª contagem: igual ao sistema confirma; divergente segue para decisão.
-    for r in _document_scope_rows:
-     if not r['contagens'] or r['status']=='FINALIZADO':
-      continue
-     q=last(r)
-     if abs(diff(r,q))<1e-9:
-      r['contagem_final']=q;r['resultado_final']='SISTEMA CONFIRMADO';r['status']='FINALIZADO'
-    persist_inv(inv)
+    # Lotes antigos podem não ter as posições coerentes marcadas. Exibi-las
+    # na cópia, sem gravar só por abrir a tela. Salvar com a decisão explícita.
+    _confirm_matching_first_counts(_document_scope_rows)
     divs=[r for r in _document_scope_rows if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9]
     if not divs: st.success('Não existem divergências na 1ª contagem. Todos os itens foram confirmados pelo sistema.')
     for r in divs:
      with st.container(border=True):
       q=last(r);a,b,c,d=st.columns(4);a.markdown(f'**{r["codigo"]} / {r["endereco"]}**');a.caption(r.get('descricao',''));b.metric('Sistema',fn(r['qtd_sistema']));c.metric('1ª contagem',fn(q));d.metric('Divergência',signed_brl(divergencia_valor(r,q)));st.caption(f'Divergência de quantidade: {diff(r,q):+,.3f}'.replace(',','X').replace('.',',').replace('X','.').replace('+','+')+f' · Classificação: {sev(abs(divergencia_valor(r,q)))} · Comentário: {r["contagens"][-1]["comentario"]}')
       x,y=st.columns(2)
-      if x.button('RECONTAR ESTE ITEM',key='r1_'+r['id'],use_container_width=True):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
-      if y.button('AUDITAR ESTE ITEM',key='a1_'+r['id'],use_container_width=True):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
+      if x.button('RECONTAR ESTE ITEM',key='r1_'+r['id'],use_container_width=True):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';_commit_inventory_action(inv)
+      if y.button('AUDITAR ESTE ITEM',key='a1_'+r['id'],use_container_width=True):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';_commit_inventory_action(inv)
       with st.expander('CONCLUIR / TRATAR DIVERGÊNCIA'):
        if _render_divergence_treatment(r,q,'a1'):
-        persist_inv(inv);st.rerun()
+        _commit_inventory_action(inv)
     x,y,z=st.columns(3)
     if x.button('RECONTAR TODOS OS DIVERGENTES',type='primary',use_container_width=True):
      for r in _document_scope_rows:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='RECONTAR'
-     inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
+     inv['status']='AGUARDANDO RECONTAGEM';_commit_inventory_action(inv)
     if y.button('AUDITAR TODOS OS DIVERGENTES',use_container_width=True):
      for r in _document_scope_rows:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
-     inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
+     inv['status']='AGUARDANDO AUDITORIA';_commit_inventory_action(inv)
     _pending_analysis=[r for r in _document_scope_rows if r.get('status')!='FINALIZADO']
     if _pending_analysis:
      st.warning(
@@ -1560,8 +1613,14 @@ elif active=='Inventário Rotativo':
     for r in targets:
      with st.container(border=True):
       st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(r['descricao']);st.caption('Histórico: '+' → '.join(f"{x['etapa']}: {fn(x['quantidade'])}" for x in r['contagens']));q=st.number_input('Nova contagem',0.0,step=.001,format='%.3f',key='q2_'+r['id']);cm=st.text_input('Comentário (opcional)',key='cm2_'+r['id'])
-      if st.button('Salvar nova contagem',key='sv2_'+r['id'],type='primary'):addcount(r,q,cm,f'{len(r["contagens"])+1}ª CONTAGEM');r['status']='RECONTADA';persist_inv(inv);st.rerun()
-    if not any(r['status']=='RECONTAR' for r in _document_scope_rows):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
+      if st.button('Salvar nova contagem',key='sv2_'+r['id'],type='primary'):
+       addcount(r,q,cm,f'{len(r["contagens"])+1}ª CONTAGEM')
+       r['status']='RECONTADA'
+       if not any(row['status']=='RECONTAR' for row in targets):inv['status']='AGUARDANDO DECISÃO'
+       _commit_inventory_action(inv)
+    if not targets and st.button('Encaminhar recontagem para decisão',key='resume_pending_recount'):
+     inv['status']='AGUARDANDO DECISÃO'
+     _commit_inventory_action(inv)
    elif _can_manage_inventory() and inv['status']=='AGUARDANDO DECISÃO':
     st.markdown('#### Avaliação após cada recontagem')
     # Mesma regra para 2ª, 3ª e todas as contagens seguintes.
@@ -1578,33 +1637,28 @@ elif active=='Inventário Rotativo':
        if r.get('ajuste_autorizado'):
         st.warning('EXISTE AJUSTE PREVIAMENTE AUTORIZADO. REVISE ESTA TRATATIVA ANTES DE FINALIZAR.')
        elif st.button('CONFIRMAR SALDO DO SISTEMA',key='confirm_recount_'+r['id'],type='primary',use_container_width=True):
-        _previous_row=copy.deepcopy(r)
-        if _confirm_system_recount(r,_session_operator()) and persist_inv(inv):
-         st.rerun()
-        else:
-         r.clear();r.update(_previous_row)
-         save('inventories',st.session_state.inventories)
-         st.error('NÃO FOI POSSÍVEL SALVAR A CONFIRMAÇÃO. O ITEM CONTINUA PENDENTE.')
+        if _confirm_system_recount(r,_session_operator()):
+         _commit_inventory_action(inv)
       else:
        if q1 is not None and abs(q2-q1)<1e-9:
         st.success('A recontagem confirmou o físico. A divergência com o sistema permanece e agora exige tratativa do Gestor.')
        else:
         st.warning('A divergência permanece. O gestor deve decidir o próximo passo.')
        a,b=st.columns(2)
-       if a.button('RECONTAR ESTE ITEM',key='dr_'+r['id'],use_container_width=True):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
-       if b.button('AUDITAR ESTE ITEM',key='da_'+r['id'],use_container_width=True):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
+       if a.button('RECONTAR ESTE ITEM',key='dr_'+r['id'],use_container_width=True):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';_commit_inventory_action(inv)
+       if b.button('AUDITAR ESTE ITEM',key='da_'+r['id'],use_container_width=True):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';_commit_inventory_action(inv)
        with st.expander('CONCLUIR / TRATAR DIVERGÊNCIA'):
         if _render_divergence_treatment(r,q2,'dec'):
-         persist_inv(inv);st.rerun()
+         _commit_inventory_action(inv)
     x,y,z=st.columns(3)
     if x.button('RECONTAR TODOS OS DIVERGENTES',type='primary',use_container_width=True):
      for r in _document_scope_rows:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='RECONTAR'
-     inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
+     inv['status']='AGUARDANDO RECONTAGEM';_commit_inventory_action(inv)
     if y.button('AUDITAR TODOS OS DIVERGENTES',use_container_width=True):
      for r in _document_scope_rows:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
-     inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
+     inv['status']='AGUARDANDO AUDITORIA';_commit_inventory_action(inv)
     _pending_decisions=[r for r in _document_scope_rows if r.get('status')!='FINALIZADO']
     if _pending_decisions:
      st.warning(
@@ -1623,11 +1677,17 @@ elif active=='Inventário Rotativo':
     for r in targets:
      with st.container(border=True):
       st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(r['descricao']);st.caption('Histórico: '+' → '.join(f"{x['etapa']}: {fn(x['quantidade'])}" for x in r['contagens']));q=st.number_input('Contagem de auditoria',0.0,step=.001,format='%.3f',key='q3_'+r['id']);cm=st.text_input('Comentário (opcional)',key='cm3_'+r['id'])
-      if st.button('Salvar auditoria',key='sv3_'+r['id'],type='primary'):addcount(r,q,cm,'AUDITORIA');r['status']='AUDITADA';persist_inv(inv);st.rerun()
-    if not any(r['status']=='AUDITORIA' for r in _document_scope_rows):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
+      if st.button('Salvar auditoria',key='sv3_'+r['id'],type='primary'):
+       addcount(r,q,cm,'AUDITORIA')
+       r['status']='AUDITADA'
+       if not any(row['status']=='AUDITORIA' for row in targets):inv['status']='AGUARDANDO DECISÃO'
+       _commit_inventory_action(inv)
+    if not targets and st.button('Encaminhar auditoria para decisão',key='resume_pending_audit'):
+     inv['status']='AGUARDANDO DECISÃO'
+     _commit_inventory_action(inv)
    elif _can_manage_inventory() and inv['status']=='FECHADO':
     st.success('Inventário encerrado e salvo no registro.');
-    if st.button('Reabrir análise'):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
+    if st.button('Reabrir análise'):inv['status']='AGUARDANDO DECISÃO';_commit_inventory_action(inv)
 
 # Database — somente consulta da base tratada publicada pela Central
 elif active=='Banco de Dados':
