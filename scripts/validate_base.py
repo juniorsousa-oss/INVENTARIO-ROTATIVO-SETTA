@@ -43,6 +43,7 @@ for rel in [
 expected_pages = [
     "Dashboard",
     "Inventário Rotativo",
+    "Inventário Anual",
     "Banco de Dados",
     "Registro",
     "Reportar Inconsistências",
@@ -59,6 +60,8 @@ if pages != expected_pages:
 for page in expected_pages:
     if page == "Dashboard":
         token = "if active=='Dashboard':"
+    elif page == "Inventário Anual":
+        token = "render_annual_pilot(st)"
     else:
         token = f"elif active=='{page}':"
     if token not in app:

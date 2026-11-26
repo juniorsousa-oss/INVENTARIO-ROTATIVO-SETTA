@@ -73,11 +73,11 @@ class InventoryShellTests(TestCase):
             markup = st.html.call_args.args[0]
             self.assertIn("setta-inv-breadcrumb", markup)
             self.assertIn(f"<h1>{title}</h1>", markup)
-        self.assertEqual(len(titles), 7)
+        self.assertEqual(len(titles), 8)
 
     def test_sidebar_routes_have_distinct_material_icons(self):
         icons = [setta_shell.route_icon(page) for page in setta_shell._ROUTES]
-        self.assertEqual(len(set(icons)), 7)
+        self.assertEqual(len(set(icons)), 8)
         self.assertTrue(all(icon.startswith(":material/") and icon.endswith(":") for icon in icons))
 
     def test_status_markup_never_interprets_status_as_html(self):
