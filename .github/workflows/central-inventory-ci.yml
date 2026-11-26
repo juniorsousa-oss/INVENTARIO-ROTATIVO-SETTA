@@ -7,9 +7,10 @@ on:
       - 'app.py'
       - 'central_inventory_data.py'
       - 'inventory_stock_reports.py'
-      - 'tests/test_inventory_stock_reports.py'
+      - 'tests/**'
       - 'scripts/test_inventory_stock_reports_live.py'
       - 'setta_shell.py'
+      - 'assets/**'
       - 'setta_auth.py'
       - '.streamlit/config.toml'
       - 'scripts/**'
@@ -37,7 +38,7 @@ jobs:
       - name: Testar prioridade de contagens
         run: python scripts/test_cycle_priority.py
       - name: Testar relatórios financeiros por armazém, posições e posição virtual
-        run: PYTHONPATH=. python -m unittest discover -s tests -p 'test_inventory_stock_reports.py' -v
+        run: PYTHONPATH=. python -m unittest discover -s tests -v
       - name: Testar relatório de contagens e Protheus
         run: python scripts/test_inventory_reports.py
       - name: Testar fechamento após recontagem
@@ -74,12 +75,13 @@ jobs:
           assert "max-width:1680px!important" not in shell
           assert "max-width:1780px!important" not in shell
           assert "box-shadow:0 24px 70px" not in shell
-          assert "width:260px!important" in shell
+          css = Path("assets/setta-inventory.css").read_text(encoding="utf-8")
+          assert "--inv-top:58px" in css and "--inv-nav:220px" in css
           assert "setta_drawer_toggle" in app
           assert "_render_setta_auth_gate()" in app
           assert "inventory_login" in auth
           assert "inventory_logout" in auth
-          assert "setta-logo-card" in app
+          assert "setta_shell.render_top(" in app
           assert "sidebar-brand" in app
           assert "section-band" in app
           assert "GESTÃO DE ESTOQUE | SETTA" in app
