@@ -1,4 +1,7 @@
 """Interface do piloto anual compartilhado, exclusivamente com dados fictícios."""
+from hashlib import sha256
+
+from inventory_annual_camera import scan_qr
 from inventory_annual_pilot import AUDIT, FIRST, SECOND, ELIGIBLE, VALIDATED
 import inventory_annual_rooms as room
 
@@ -171,10 +174,48 @@ def _coordinator(st, token, current):
             st.dataframe(evidence, hide_index=True)
 
 
+def _camera_capture(st, token, stage, address, code, ident):
+    scope = sha256(f"{token}:{ident}".encode()).hexdigest()[:24]
+    state_key = "_annual_camera_preview"
+    preview = st.session_state.get(state_key)
+    payload = preview[1] if preview and preview[0] == scope else None
+    if payload is None:
+        payload = scan_qr("ann_cam_" + scope)
+        if payload is None:
+            return
+        st.session_state[state_key] = (scope, payload)
+        st.rerun()
+    try:
+        item = room.parse_demo_label(payload, address)
+        if code and item.product != code:
+            raise ValueError("A etiqueta não pertence ao produto desta tarefa.")
+    except ValueError as exc:
+        st.warning(f"QR não aceito: {exc}")
+        if st.button("Ler outra etiqueta", key="ann_camera_reject_" + scope):
+            st.session_state.pop(state_key, None)
+            st.rerun()
+        return
+    st.success("QR lido. Confira os dados antes de adicionar ao rascunho.")
+    st.markdown(f"**Produto:** {item.product}  \n**Lote:** {item.lot}  \n**Quantidade:** {item.quantity}")
+    repeat = st.checkbox("Confirmo que é outra etiqueta física, se a leitura da câmera for igual",
+                         key="ann_camera_repeat_" + scope)
+    add, retry = st.columns(2)
+    if add.button("Adicionar QR lido", type="primary", key="ann_camera_add_" + scope):
+        def register():
+            room.action(token, "add", stage, address, code, item=item, repeat=repeat)
+            st.session_state.pop(state_key, None)
+        _apply(st, register)
+    if retry.button("Descartar leitura da câmera", key="ann_camera_discard_" + scope):
+        st.session_state.pop(state_key, None)
+        st.rerun()
+
+
 def _capture(st, token, stage, address, code, lines):
     st.markdown(f"**Endereço {address}**" + (f" · Produto **{code}**" if code else ""))
     st.caption("O endereço vem da tarefa; o QR atual contém produto, lote e quantidade.")
     ident = f"{stage}_{address}_{code}"
+    with st.container():
+        _camera_capture(st, token, stage, address, code, ident)
     with st.form("ann_qr_" + ident, clear_on_submit=True):
         payload = st.text_input("Ler ou colar o QR da etiqueta", max_chars=180,
                                 placeholder="00000001,000101,3")
@@ -247,6 +288,7 @@ def _free_count(st, token, current):
         key = room.task_key(stage, address, "", current["role"])
         if key in current["drafts"]:
             if st.button("Sair do endereço sem enviar"):
+                st.session_state.pop("_annual_camera_preview", None)
                 st.session_state.pop("_annual_free_active", None)
                 st.rerun()
             if stage == room.EXTRA:
@@ -395,6 +437,7 @@ def _inventory_list(st, manager):
 def render(st, *, manager=False):
     st.warning("PILOTO · Dados fictícios do S2. Sem integração com o estoque real ou o Protheus.")
     st.caption("Novos pilotos sugerem endereços aptos do S2 com base no relatório ENDEREÇO de teste.")
+    st.caption("No endereço de contagem, use Abrir câmera para ler QR ou lance manualmente.")
     st.caption("Os rascunhos salvos ficam neste piloto por até três dias e dependem de o servidor não ser recriado.")
     token = st.session_state.get(STATE)
     if not token:
