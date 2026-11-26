@@ -231,7 +231,18 @@ O QR atual traz `produto,lote,quantidade`, sem endereço. Teste com
 `00000001,000101,3`. Os códigos fictícios `00000001`, `00000002` e `00000003`
 correspondem a `SIM-001`, `SIM-002` e `SIM-003`. Etiquetas antigas permitem
 lançar separadamente produto, lote e quantidade. O campo aceita leitores que
-digitam o conteúdo; também é possível colá-lo. Não há câmera embutida.
+digitam o conteúdo; também é possível colá-lo. No piloto, depois de abrir
+um endereço, toque em **Abrir câmera para ler QR** e permita o acesso. A
+câmera traseira é preferida quando disponível, a leitura é feita no aparelho
+e só o texto do QR é enviado ao app. A câmera fecha ao reconhecer a etiqueta.
+Confira produto, lote e quantidade antes de adicionar; a câmera não grava
+nenhuma contagem automaticamente. Sem acesso à câmera, use o leitor externo,
+cole o código ou faça o lançamento manual. A leitura de etiquetas antigas
+com códigos separados continua no fluxo manual.
+
+O leitor usa jsQR 1.4.0, de Joseph Scharff, sob Apache-2.0
+(licença em `assets/jsqr-LICENSE.txt`). Foi incorporado ao componente do app,
+sem dependência de serviço ou CDN na hora da leitura.
 A mesma combinação de endereço, produto e lote acumula as quantidades;
 lotes diferentes ficam separados. Em leituras idênticas, confirme que se
 trata de outro volume antes de somar. A Coordenação acompanha a etapa e o responsável. Nos novos pilotos,
