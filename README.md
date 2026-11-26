@@ -192,3 +192,25 @@ Essa evolução não é necessária para validar o build atual, mas é o próxim
 Aplique primeiro `supabase/migrations/20261126_inventory_document_guard.sql` na Central e só depois publique o Streamlit. A versão antiga pode consultar, mas não consegue gravar lotes depois da migração; avise os operadores da transição e peça que recarreguem a sessão. Não publique o cliente novo em uma Central sem a migração. A Edge Function não precisa ser substituída.
 
 O teste em `tests/sql/inventory_document_guard.sql` usa lotes artificiais e deve rodar somente em um PostgreSQL isolado, nunca na Central de produção.
+
+## Inventário Anual · Piloto
+
+A aba usa exclusivamente o catálogo e os saldos fictícios definidos em
+`inventory_annual_pilot.py`. A coordenação e as duas duplas podem ser simuladas
+na mesma sessão, sem gravar no estoque, na Central ou no Rotativo. O bloqueio
+é simulado (não altera o Protheus). Ao recarregar a página, a sessão é descartada.
+A exportação para ajuste em massa e a entrada de bases reais não estão disponíveis.
+
+Roteiro com as duplas sugeridas, para testar fechamento e recontagem:
+
+| Endereço | 1ª contagem | 2ª contagem (outra dupla) | Auditoria |
+| --- | --- | --- | --- |
+| A-01 | SIM-001 = 8; SIM-002 = 3 | SIM-001 = 8; SIM-002 = 5 | — |
+| A-02 | SIM-001 = 5; SIM-002 = 4 | SIM-001 = 5; SIM-002 = 2 | SIM-002 = 1,5, com justificativa |
+| B-01 | SIM-003 = 4 | — | — |
+| B-02 | Entregar como vazio | — | — |
+
+Na Coordenação, feche após a auditoria. Resultado esperado: SIM-001 totaliza
+15 (13 dos aptos + 2 do não apto), com diferença global zero, mas mantém
+`-2` e `+2` por endereço. SIM-002 totaliza 7,5 contra 6 no corte do S2,
+diferença de +1,5 unidade e +R$ 37,50. SIM-003 fecha sem diferença.

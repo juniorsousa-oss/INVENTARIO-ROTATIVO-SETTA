@@ -197,87 +197,90 @@ def firestore_load_eligible():
         return None
 
 
-_remote_operational_state={}
-_remote_operational_loaded=False
-_force_operational_reload=(
- st.session_state.get('_inventory_data_epoch')!=INVENTORY_DATA_EPOCH
-)
-if _force_operational_reload or any(
- key not in st.session_state
- for key in ('cfg','inventories','cycles','reports')
-):
- try:
-  _remote_operational_state=central_data.operational_state(
-   ['cfg','inventories','cycles','reports']
-  )
-  _remote_operational_loaded=True
-  st.session_state.pop('_operational_persistence_error',None)
- except Exception as exc:
-  _remote_operational_state={}
-  st.session_state['_operational_persistence_error']=str(exc)
+def _initialize_rotating_inventory():
+ global cfg, config
+ _remote_operational_state={}
+ _remote_operational_loaded=False
+ _force_operational_reload=(
+  st.session_state.get('_inventory_data_epoch')!=INVENTORY_DATA_EPOCH
+ )
+ if _force_operational_reload or any(
+  key not in st.session_state
+  for key in ('cfg','inventories','cycles','reports')
+ ):
+  try:
+   _remote_operational_state=central_data.operational_state(
+    ['cfg','inventories','cycles','reports']
+   )
+   _remote_operational_loaded=True
+   st.session_state.pop('_operational_persistence_error',None)
+  except Exception as exc:
+   _remote_operational_state={}
+   st.session_state['_operational_persistence_error']=str(exc)
 
-def _initial_operational_value(key,default):
- if key in _remote_operational_state:
-  value=_remote_operational_state.get(key)
-  return value if value is not None else default
- return load(key,default)
+ def _initial_operational_value(key,default):
+  if key in _remote_operational_state:
+   value=_remote_operational_state.get(key)
+   return value if value is not None else default
+  return load(key,default)
 
-if 'cfg' not in st.session_state:
- _saved_cfg=_initial_operational_value('cfg',{}) or {}
- st.session_state.cfg={**DEFAULT,**(_saved_cfg if isinstance(_saved_cfg,dict) else {})}
+ if 'cfg' not in st.session_state:
+  _saved_cfg=_initial_operational_value('cfg',{}) or {}
+  st.session_state.cfg={**DEFAULT,**(_saved_cfg if isinstance(_saved_cfg,dict) else {})}
 
-# A base de estoque é carregada da Central SETTA depois do shell.
-# Firestore/SQLite ficam apenas como contingência se a Central falhar.
-if 'db' not in st.session_state: st.session_state.db=None
-if 'pos' not in st.session_state: st.session_state.pos=None
-if 'eligible' not in st.session_state: st.session_state.eligible=[]
+ # A base de estoque é carregada da Central SETTA depois do shell.
+ # Firestore/SQLite ficam apenas como contingência se a Central falhar.
+ if 'db' not in st.session_state: st.session_state.db=None
+ if 'pos' not in st.session_state: st.session_state.pos=None
+ if 'eligible' not in st.session_state: st.session_state.eligible=[]
 
-if _force_operational_reload and _remote_operational_loaded:
- _saved_inventories=_remote_operational_state.get('inventories',{}) or {}
- _saved_cycles=_remote_operational_state.get('cycles',{}) or {}
- _saved_reports=_remote_operational_state.get('reports',{}) or {}
- st.session_state.inventories=_saved_inventories if isinstance(_saved_inventories,dict) else {}
- st.session_state.cycles=_saved_cycles if isinstance(_saved_cycles,dict) else {}
- st.session_state.reports=_saved_reports if isinstance(_saved_reports,dict) else {}
- st.session_state.selected=None
- st.session_state.new_inv=False
- st.session_state['_inventory_data_epoch']=INVENTORY_DATA_EPOCH
- save('inventories',st.session_state.inventories)
- save('cycles',st.session_state.cycles)
- save('reports',st.session_state.reports)
-else:
- if 'inventories' not in st.session_state:
-  _saved_inventories=_initial_operational_value('inventories',{}) or {}
+ if _force_operational_reload and _remote_operational_loaded:
+  _saved_inventories=_remote_operational_state.get('inventories',{}) or {}
+  _saved_cycles=_remote_operational_state.get('cycles',{}) or {}
+  _saved_reports=_remote_operational_state.get('reports',{}) or {}
   st.session_state.inventories=_saved_inventories if isinstance(_saved_inventories,dict) else {}
- if 'cycles' not in st.session_state:
-  _saved_cycles=_initial_operational_value('cycles',{}) or {}
   st.session_state.cycles=_saved_cycles if isinstance(_saved_cycles,dict) else {}
- if 'reports' not in st.session_state:
-  _saved_reports=_initial_operational_value('reports',{}) or {}
   st.session_state.reports=_saved_reports if isinstance(_saved_reports,dict) else {}
+  st.session_state.selected=None
+  st.session_state.new_inv=False
+  st.session_state['_inventory_data_epoch']=INVENTORY_DATA_EPOCH
+  save('inventories',st.session_state.inventories)
+  save('cycles',st.session_state.cycles)
+  save('reports',st.session_state.reports)
+ else:
+  if 'inventories' not in st.session_state:
+   _saved_inventories=_initial_operational_value('inventories',{}) or {}
+   st.session_state.inventories=_saved_inventories if isinstance(_saved_inventories,dict) else {}
+  if 'cycles' not in st.session_state:
+   _saved_cycles=_initial_operational_value('cycles',{}) or {}
+   st.session_state.cycles=_saved_cycles if isinstance(_saved_cycles,dict) else {}
+  if 'reports' not in st.session_state:
+   _saved_reports=_initial_operational_value('reports',{}) or {}
+   st.session_state.reports=_saved_reports if isinstance(_saved_reports,dict) else {}
 
-if 'section' not in st.session_state: st.session_state.section='Dashboard'
-if 'selected' not in st.session_state: st.session_state.selected=None
-if 'new_inv' not in st.session_state: st.session_state.new_inv=False
+ if 'section' not in st.session_state: st.session_state.section='Dashboard'
+ if 'selected' not in st.session_state: st.session_state.selected=None
+ if 'new_inv' not in st.session_state: st.session_state.new_inv=False
 
-cfg=st.session_state.cfg
-config=cfg
+ cfg=st.session_state.cfg
+ config=cfg
 
-# O SQLite é contingência de leitura dos lotes. Uma cópia local não é
-# enviada automaticamente como se fosse a versão oficial de um lote.
-if _remote_operational_loaded and not st.session_state.get('_operational_state_migration_checked'):
- try:
-  if 'cycles' not in _remote_operational_state and st.session_state.cycles:
-   central_data.merge_inventory_cycles(st.session_state.cycles)
+ # O SQLite é contingência de leitura dos lotes. Uma cópia local não é
+ # enviada automaticamente como se fosse a versão oficial de um lote.
+ if _remote_operational_loaded and not st.session_state.get('_operational_state_migration_checked'):
+  try:
+   if 'cycles' not in _remote_operational_state and st.session_state.cycles:
+    central_data.merge_inventory_cycles(st.session_state.cycles)
 
-  if 'reports' not in _remote_operational_state and st.session_state.reports:
-   for _rid,_rep in st.session_state.reports.items():
-    central_data.save_inventory_report(str(_rid),_rep)
+   if 'reports' not in _remote_operational_state and st.session_state.reports:
+    for _rid,_rep in st.session_state.reports.items():
+     central_data.save_inventory_report(str(_rid),_rep)
 
-  st.session_state.pop('_operational_persistence_error',None)
- except Exception as exc:
-  st.session_state['_operational_persistence_error']=str(exc)
- st.session_state['_operational_state_migration_checked']=True
+   st.session_state.pop('_operational_persistence_error',None)
+  except Exception as exc:
+   st.session_state['_operational_persistence_error']=str(exc)
+  st.session_state['_operational_state_migration_checked']=True
+
 
 # Autenticação central SETTA. A política global do OperaHub decide se o login é obrigatório.
 @st.cache_data(ttl=60,show_spinner=False,max_entries=2)
@@ -1147,7 +1150,7 @@ def render_api_monitor():
 
 
 # Sidebar — espelho estrutural do Controle de NFs
-_INV_NAV_PAGES=['Dashboard','Inventário Rotativo','Banco de Dados','Registro','Reportar Inconsistências','Retornos de Produção','Configurações']
+_INV_NAV_PAGES=['Dashboard','Inventário Rotativo','Inventário Anual','Banco de Dados','Registro','Reportar Inconsistências','Retornos de Produção','Configurações']
 
 def _visible_inventory_pages():
  return ['Retornos de Produção'] if _session_profile()=='Produção' else _INV_NAV_PAGES
@@ -1164,6 +1167,10 @@ def _current_inventory_page():
   value='Retornos de Produção' if _session_profile()=='Produção' else 'Dashboard'
   st.session_state.section=value
  return value
+
+_annual_pilot_active=_current_inventory_page()=='Inventário Anual'
+if not _annual_pilot_active:
+ _initialize_rotating_inventory()
 
 with st.sidebar:
  with st.container(key='setta_route_list', gap=None):
@@ -1205,11 +1212,12 @@ with st.sidebar:
     except Exception:
      pass
     st.session_state.pop('_setta_auth_user',None)
+    st.session_state.pop('_annual_inventory_pilot_v1',None)
     _setta_close_sidebar()
     st.rerun()
 
 
-if st.session_state.get('_operational_persistence_error'):
+if not _annual_pilot_active and st.session_state.get('_operational_persistence_error'):
  st.error(
   'PERSISTÊNCIA OPERACIONAL INDISPONÍVEL · '
   + str(st.session_state.get('_operational_persistence_error'))
@@ -1225,6 +1233,13 @@ with st.container(key='setta_top_controls'):
  )
 
 _render_setta_auth_gate()
+
+if _annual_pilot_active:
+ from inventory_annual_ui import render as render_annual_pilot
+ _sidebar_status_slot.info('Inventário Anual · Piloto sem dados reais')
+ setta_shell.render_page(st,'Inventário Anual')
+ render_annual_pilot(st)
+ st.stop()
 
 # Ao abrir/recarregar o navegador, a sessão sempre consulta as versões
 # oficiais antes de reutilizar qualquer cache compartilhado de metadados.

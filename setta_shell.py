@@ -9,6 +9,7 @@ _ASSETS = Path(__file__).with_name("assets")
 _ROUTES = {
     "Dashboard": ("Gestão de estoque", "Painel geral", "Acompanhe os indicadores, a acurácia e o andamento das contagens.", "grid_view"),
     "Inventário Rotativo": ("Gestão de estoque", "Inventário rotativo", "Acompanhe os lotes, registre contagens e trate divergências.", "inventory_2"),
+    "Inventário Anual": ("Gestão de estoque", "Inventário anual", "Valide a contagem por endereço e o fechamento anual do S2.", "calendar_month"),
     "Banco de Dados": ("Gestão de estoque", "Banco de dados", "Consulte o estoque e os relatórios de conferência.", "database"),
     "Registro": ("Gestão de estoque", "Registro", "Consulte o histórico das contagens e acompanhe os ajustes.", "assignment"),
     "Reportar Inconsistências": ("Gestão de estoque", "Reportar inconsistências", "Registre e acompanhe as inconsistências de estoque.", "fact_check"),
