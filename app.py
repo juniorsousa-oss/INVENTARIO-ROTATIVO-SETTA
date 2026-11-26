@@ -1219,6 +1219,9 @@ with st.sidebar:
     st.session_state.pop('_annual_memberships_v3',None)
     st.session_state.pop('_annual_last_sent_v3',None)
     st.session_state.pop('_annual_prepare_teams_v3',None)
+    st.session_state.pop('_annual_free_active',None)
+    st.session_state.pop('_annual_address_conflict',None)
+    st.session_state.pop('_annual_extra_sent',None)
     _setta_close_sidebar()
     st.rerun()
 

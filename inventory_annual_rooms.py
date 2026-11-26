@@ -13,14 +13,18 @@ import secrets
 import sqlite3
 import tempfile
 import time
+import unicodedata
 
 from inventory_annual_pilot import (
-    AUDIT, FIRST, SECOND, CATALOG, ELIGIBLE, TEAMS, INDEPENDENT, AnnualPilot, Position, qty,
+    AUDIT, FIRST, SECOND, CATALOG, ELIGIBLE, EXCLUDED, TEAMS, INDEPENDENT, AnnualPilot, Position, qty,
 )
 
 COORD = "Coordenação"
 AUDITOR = "Auditoria"
 TITLE = "Inventário anual S2"
+EXTRA = "Conferência extra"
+INDIVIDUAL = "Individual"
+PAIRS = "Em duplas"
 PATH = Path(tempfile.gettempdir()) / "setta-annual-demo-v2" / "rooms.sqlite3"
 TTL = 3 * 24 * 60 * 60
 MAX_ROOMS = 200
@@ -39,13 +43,23 @@ class Reading:
     label_id: str = ""
 
 
+def normalize_address(value):
+    text = unicodedata.normalize("NFKC", str(value or "")).upper()
+    text = re.sub(r"[‐‑‒–—−]", "-", text)
+    text = re.sub(r"\s*([-./])\s*", r"\1", " ".join(text.split()))
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9 ._/-]{0,59}", text):
+        raise ValueError("Informe um endereço válido do S2.")
+    if text in EXCLUDED:
+        raise ValueError("Este endereço não é apto para contagem no S2.")
+    return text
+
+
 def reading(product, address, lot, amount, label_id=""):
     product, address, lot, label_id = (v.strip().upper() for v in (product, address, lot, label_id))
     product = DEMO_PRODUCTS.get(product, product)
     if product not in CATALOG:
         raise ValueError("Produto não encontrado no catálogo fictício.")
-    if address not in ELIGIBLE:
-        raise ValueError("Endereço não apto neste piloto.")
+    address = normalize_address(address)
     if not FIELD.fullmatch(lot) or (label_id and not FIELD.fullmatch(label_id)):
         raise ValueError("Informe um lote válido. Use apenas letras, números, ponto, hífen ou sublinhado.")
     if not re.fullmatch(r"\d{1,10}(?:[.,]\d{1,6})?", str(amount).strip(), flags=re.ASCII):
@@ -84,12 +98,13 @@ def worker_codes(coordinator_code, teams=TEAMS):
             for role in worker_roles(teams)}
 
 
-def _state(pilot, drafts=None, evidence=None, *, info=None):
+def _state(pilot, drafts=None, evidence=None, *, info=None, extras=None):
     return {"assignment": pilot.assignment, "started": pilot.started_at.isoformat(),
             "closed": pilot.closed_at.isoformat() if pilot.closed_at else None,
             "snapshot": pilot._snapshot, "system": pilot._total, "catalog": pilot._catalog,
             "positions": {a: {k: asdict(row) for k, row in rows.items()} for a, rows in pilot.positions.items()},
-            "drafts": drafts or {}, "evidence": evidence or {}, "info": info or {}}
+            "drafts": drafts or {}, "evidence": evidence or {}, "info": info or {},
+            "free": pilot.free, "roster": pilot.roster, "extras": extras or {}}
 
 
 def team_ids(people):
@@ -130,7 +145,8 @@ def _restore(state):
     def dec(v):
         return Decimal(v) if v is not None else None
     p = AnnualPilot(assignment=state["assignment"], started_at=datetime.fromisoformat(state["started"]),
-                    closed_at=datetime.fromisoformat(state["closed"]) if state["closed"] else None)
+                    closed_at=datetime.fromisoformat(state["closed"]) if state["closed"] else None,
+                    free=state.get("free", False), roster=tuple(state.get("roster", ())))
     p._snapshot = {a: {k: dec(v) for k, v in rows.items()} for a, rows in state["snapshot"].items()}
     p._total = {k: dec(v) for k, v in state["system"].items()}
     p._catalog = {k: (v[0], dec(v[1])) for k, v in state["catalog"].items()}
@@ -164,10 +180,28 @@ def _encode(obj):
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
-def create_room(assignment, locked, *, teams=None, people=None, title=TITLE, path=PATH):
-    info = validate_teams(teams, people, title) if teams is not None else {}
+def formation(people, mode, participants, title):
+    if type(people) is not int or people < 1 or mode not in (INDIVIDUAL, PAIRS):
+        raise ValueError("Informe a quantidade de pessoas e o modo de contagem.")
+    names = [_label(line, "o nome de cada participante") for line in participants.splitlines() if line.strip()]
+    if len(names) != people:
+        raise ValueError(f"Informe um nome por linha. Quantidade esperada: {people}; informada: {len(names)}.")
+    if len(set(n.casefold() for n in names)) != people:
+        raise ValueError("Cada participante só pode aparecer uma vez.")
+    size = 1 if mode == INDIVIDUAL else 2
+    teams = {}
+    for i in range(0, people, size):
+        lead = names[i]
+        assistant = names[i+1] if size == 2 and i+1 < people else ""
+        teams[f"EQ-{i//size+1:06}"] = {"name": f"{lead} / {assistant}" if assistant else lead,
+                                     "lead": lead, "assistant": assistant}
+    return {"title": _label(title, "o nome do inventário"), "teams": teams, "mode": mode}
+
+
+def create_room(assignment, locked, *, teams=None, people=None, title=TITLE, mode=None, participants="", path=PATH):
+    info = formation(people, mode, participants, title) if mode else (validate_teams(teams, people, title) if teams is not None else {})
     p = AnnualPilot()
-    p.start(assignment, locked, teams=tuple(info["teams"]) if info else TEAMS)
+    p.start(assignment, locked, teams=tuple(info["teams"]) if info else TEAMS, free=mode is not None)
     token = secrets.token_urlsafe(24)
     room = secrets.token_hex(8)
     now = int(time.time())
@@ -200,7 +234,16 @@ def _key(stage, address, product=""):
     return "|".join((stage, address, product))
 
 
-def _assert_task(pilot, role, stage, address, product):
+class AddressConflict(ValueError):
+    def __init__(self, owner, name, submitted):
+        self.owner = owner
+        self.name = name
+        self.submitted = submitted
+        state = "já foi contado e enviado" if submitted else "já está em contagem"
+        super().__init__(f"Este endereço {state} pela equipe {name}.")
+
+
+def _assert_task(pilot, role, stage, address, product, extras):
     pilot._require_open()
     if stage == FIRST and role in pilot.teams and pilot.assignment.get(address) == role and address not in pilot.positions and product == "":
         return
@@ -208,7 +251,13 @@ def _assert_task(pilot, role, stage, address, product):
         return
     if stage == AUDIT and role == AUDITOR and (address, product) in pilot.audit_queue():
         return
+    if stage == EXTRA and role in pilot.teams and not product and extras.get(address, {}).get(role) == "open":
+        return
     raise ValueError("Esta tarefa não está disponível para o seu papel. Atualize a fila.")
+
+
+def task_key(stage, address, product, role):
+    return _key(stage, address, role if stage == EXTRA else product)
 
 
 def grouped(lines):
@@ -232,9 +281,12 @@ def view(token, *, path=PATH):
     teams = info.get("teams") or {idx: {"name": idx, "lead": "", "assistant": ""} for idx in p.teams}
     display = teams.get(role, {}).get("name", role)
     common = {"role": role, "closed": bool(p.closed_at), "display": display, "title": info.get("title", TITLE),
-              "room_id": room_id}
+              "room_id": room_id, "free": p.free}
+    extras = state.get("extras") or {}
     if role == COORD:
         queue = []
+        if p.free:
+            queue.extend((a, "", FIRST, "Ainda não iniciado", False) for a in ELIGIBLE if a not in p.assignment)
         for a, team in p.assignment.items():
             status = p.address_status(a)
             if status == FIRST:
@@ -243,17 +295,27 @@ def view(token, *, path=PATH):
                 if pos.stage in (SECOND, AUDIT):
                     responsible = p.recount_owner(a) if pos.stage == SECOND else AUDITOR
                     queue.append((a, code, pos.stage, responsible, bool(state["drafts"].get(_key(pos.stage, a, code)))))
-        return {**common, "pilot": p, "teams": teams, "queue": queue, "evidence": _draft_details(state["evidence"]) if p.closed_at else {}}
+        extra_report = []
+        for address, actions in extras.items():
+            for team, status in actions.items():
+                key = task_key(EXTRA,address,"",team)
+                rows = state["evidence"].get(key, [])
+                extra_report.append((address, team, status, grouped(rows)))
+        final = {key: lines for key, lines in state["evidence"].items() if not key.startswith(EXTRA + "|")}
+        return {**common, "pilot": p, "teams": teams, "queue": queue, "extras": extra_report,
+                "evidence": _draft_details(final) if p.closed_at else {}}
     tasks = {}
     if not p.closed_at:
         if role in p.teams:
-            tasks[FIRST] = [(a, "") for a in ELIGIBLE if p.assignment[a] == role and a not in p.positions]
+            tasks[FIRST] = [(a, "") for a, owner in sorted(p.assignment.items()) if owner == role and a not in p.positions]
             tasks[SECOND] = p.queue(role)
+            if p.free:
+                tasks[EXTRA] = [(a,"") for a, attempts in sorted(extras.items()) if attempts.get(role) == "open"]
         elif role == INDEPENDENT:
             tasks[SECOND] = p.queue(role)
         else:
             tasks[AUDIT] = p.audit_queue()
-    own = {_key(stage, a, c): state["drafts"].get(_key(stage, a, c), [])
+    own = {task_key(stage, a, c, role): state["drafts"].get(task_key(stage, a, c, role), [])
            for stage, pairs in tasks.items() for a, c in pairs}
     return {**common, "tasks": tasks, "drafts": own}
 
@@ -263,18 +325,43 @@ def draft_version(lines):
 
 
 def action(token, event, stage="", address="", product="", *, item=None, repeat=False, line_id="",
-           empty=False, complete=False, note="", expected=None, path=PATH):
+           empty=False, complete=False, note="", expected=None, confirm_owner="", path=PATH):
     """Recheck permissions and mutate the freshest room in one transaction."""
     with _connect(path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         room, role, state = _authorized(conn, token)
         p = _restore(state)
         drafts, evidence = state["drafts"], state["evidence"]
-        if event == "close" and role == COORD:
+        extras = state.get("extras") or {}
+        result = None
+        if event == "open":
+            p._require_open()
+            if not p.free or role not in p.teams:
+                raise ValueError("Somente a equipe de contagem pode iniciar um endereço.")
+            address = normalize_address(address)
+            owner = p.assignment.get(address)
+            if owner is None:
+                p.assignment[address] = role
+                result = (FIRST, address)
+            elif owner == role:
+                if address in p.positions:
+                    raise ValueError("Seu endereço já foi enviado para conferência e não pode ser editado.")
+                result = (FIRST, address)
+            elif extras.get(address, {}).get(role) == "open":
+                result = (EXTRA, address)
+            elif extras.get(address, {}).get(role) == "submitted":
+                raise ValueError("Sua equipe já enviou uma conferência extra neste endereço.")
+            elif confirm_owner == owner:
+                extras.setdefault(address, {})[role] = "open"
+                result = (EXTRA, address)
+            else:
+                name = (state.get("info", {}).get("teams") or {}).get(owner, {}).get("name", owner)
+                raise AddressConflict(owner, name, address in p.positions)
+        elif event == "close" and role == COORD:
             p.close()
         else:
-            _assert_task(p, role, stage, address, product)
-            key = _key(stage, address, product)
+            _assert_task(p, role, stage, address, product, extras)
+            key = task_key(stage, address, product, role)
             lines = drafts.get(key, [])
             if event == "add":
                 if not isinstance(item, Reading) or item.address != address or (product and item.product != product):
@@ -313,6 +400,8 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
                     p.first(role, address, dict(totals), empty=empty, complete=complete)
                 elif not complete or (empty and lines) or (not empty and not lines):
                     raise ValueError("Confirme a conferência e registre as etiquetas ou marque produto não encontrado.")
+                elif stage == EXTRA:
+                    extras[address][role] = "submitted"
                 elif stage == SECOND:
                     p.recount(role, address, product, totals[product])
                 else:
@@ -321,4 +410,5 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
                 drafts.pop(key, None)
             else:
                 raise ValueError("Ação não reconhecida.")
-        conn.execute("UPDATE annual_rooms SET state=? WHERE id=?", (_encode(_state(p, drafts, evidence, info=state.get("info"))), room))
+        conn.execute("UPDATE annual_rooms SET state=? WHERE id=?", (_encode(_state(p, drafts, evidence, info=state.get("info"), extras=extras)), room))
+    return result

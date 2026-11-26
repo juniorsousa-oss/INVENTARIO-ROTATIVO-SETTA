@@ -1,5 +1,5 @@
 """Interface do piloto anual compartilhado, exclusivamente com dados fictícios."""
-from inventory_annual_pilot import AUDIT, FIRST, SECOND, ELIGIBLE, EXCLUDED, VALIDATED
+from inventory_annual_pilot import AUDIT, FIRST, SECOND, ELIGIBLE, VALIDATED
 import inventory_annual_rooms as room
 
 STATE = "_annual_inventory_pilot_code_v2"
@@ -40,53 +40,37 @@ def _setup(st):
     st.caption("Use nomes fictícios. O saldo simulado do S2 é congelado ao iniciar.")
     plan = st.session_state.get(PREP) or {}
     if not plan.get("ready"):
-        choices = [2, 4, 6, 8]
-        selected = choices.index(plan["people"]) if plan.get("people") in choices else None
-        people = st.selectbox("Quantas pessoas vão realizar a contagem?", choices, index=selected,
-                              placeholder="Selecione um total par")
-        if people is None:
-            return
-        ids = room.team_ids(people)
-        with st.form("ann_prepare_teams_" + str(people), enter_to_submit=False):
+        with st.form("ann_setup_free", enter_to_submit=False):
             title = st.text_input("Nome do inventário", value=plan.get("title", room.TITLE), max_chars=60)
-            teams = {}
-            for i, idx in enumerate(ids, start=1):
-                default = (plan.get("teams") or {}).get(idx, {})
-                st.markdown(f"**Dupla {i}**")
-                teams[idx] = {
-                    "name": st.text_input(f"Nome da equipe {i}", value=default.get("name", f"Equipe {i}"),
-                                          max_chars=60),
-                    "lead": st.text_input(f"Cabeça de chave da equipe {i}", value=default.get("lead", ""),
-                                          max_chars=60),
-                    "assistant": st.text_input(f"Auxiliar da equipe {i}", value=default.get("assistant", ""),
-                                               max_chars=60),
-                }
-            if st.form_submit_button("Confirmar equipes", type="primary"):
+            mode = st.radio("Como será a contagem?", (room.INDIVIDUAL, room.PAIRS),
+                            index=0 if plan.get("mode") == room.INDIVIDUAL else 1, horizontal=True)
+            people = st.number_input("Quantas pessoas vão realizar a contagem?", min_value=1,
+                                     value=plan.get("people"), step=1, placeholder="Informe o total de pessoas")
+            participants = st.text_area("Participantes, um por linha", value=plan.get("participants", ""),
+                        help="Em duplas, informe o cabeça de chave e depois o auxiliar de cada dupla. "
+                             "Se sobrar uma pessoa, ela conta individualmente.")
+            if st.form_submit_button("Conferir formação", type="primary"):
                 def confirm_teams():
-                    valid = room.validate_teams(teams, people, title)
-                    st.session_state[PREP] = {**valid, "people": people, "ready": True}
+                    valid = room.formation(people, mode, participants, title)
+                    st.session_state[PREP] = {**valid, "people": people, "participants": participants, "ready": True}
                 _apply(st, confirm_teams)
         return
-    people, teams = plan["people"], plan["teams"]
-    ids = room.team_ids(people)
-    st.subheader("Distribuir endereços")
-    st.caption(f"{people} pessoas · {len(ids)} dupla(s)")
+    st.subheader("Equipes formadas")
+    st.caption(f'{plan["people"]} pessoa(s) · {len(plan["teams"])} equipe(s) · {plan["mode"]}')
+    st.dataframe([{"Equipe": d["name"], "Responsável": d["lead"],
+                   "Auxiliar": d["assistant"] or "—"} for d in plan["teams"].values()], hide_index=True)
+    st.caption("Sem endereços pré-atribuídos. Cada equipe informa o endereço que vai contar.")
     if st.button("Editar formação das equipes"):
         st.session_state[PREP] = {**plan, "ready": False}
         st.rerun()
-    with st.form("ann_plan_addresses_" + str(people), enter_to_submit=False):
-        assignment = {a: st.selectbox(f"Equipe de {a}", ids, index=i % len(ids),
-                    format_func=lambda idx: teams[idx]["name"], key=f"ann_assign_{people}_{a}")
-                      for i, a in enumerate(ELIGIBLE)}
+    with st.form("ann_start_free", enter_to_submit=False):
         locked = st.checkbox("Confirmo o bloqueio simulado do S2")
         if st.form_submit_button("Iniciar piloto", type="primary"):
             def start():
-                st.session_state[STATE] = room.create_room(assignment, locked, teams=teams, people=people,
-                                                           title=plan["title"])
+                st.session_state[STATE] = room.create_room({}, locked, people=plan["people"], title=plan["title"],
+                    mode=plan["mode"], participants=plan["participants"])
                 st.session_state.pop(PREP, None)
             _apply(st, start)
-    for address, reason in EXCLUDED.items():
-        st.caption(f"{address} · Não apto: {reason}. Seu saldo de corte entra apenas na apuração final.")
 
 
 def _entry(st, manager):
@@ -105,10 +89,11 @@ def _coordinator(st, token, current):
     st.subheader("Acompanhar endereços")
     st.text(current["title"])
     st.caption("Saldo de corte: " + pilot.started_at.strftime("%d/%m/%Y às %H:%M"))
-    st.progress(sum(pilot.address_status(a) == VALIDATED for a in ELIGIBLE) / len(ELIGIBLE))
+    covered = set(ELIGIBLE) | pilot.assignment.keys()
+    st.progress(sum(pilot.address_status(a) == VALIDATED for a in covered) / len(covered))
     with st.expander("Equipes e endereços"):
         st.dataframe([{"Equipe": data["name"], "Cabeça de chave": data["lead"], "Auxiliar": data["assistant"],
-                       "Endereços": ", ".join(a for a in ELIGIBLE if pilot.assignment[a] == idx)}
+                       "Endereços": ", ".join(a for a, owner in sorted(pilot.assignment.items()) if owner == idx) or "—"}
                       for idx, data in current["teams"].items()], hide_index=True)
     with st.expander("Códigos de acesso do piloto"):
         st.caption("Cada código acessa apenas um papel. Compartilhe apenas o código da função correspondente.")
@@ -123,6 +108,16 @@ def _coordinator(st, token, current):
                       for a, c, stage, responsible, draft in queue], hide_index=True)
     else:
         st.success("Nenhuma pendência na fila.")
+    if current["extras"]:
+        with st.expander("Conferências extras • fora do total"):
+            st.dataframe([{"Endereço": a, "Equipe": current["teams"][t]["name"],
+                           "Situação": "Enviada" if status == "submitted" else "Em contagem"}
+                           for a, t, status, _ in current["extras"]], hide_index=True)
+            details = [{"Endereço": a, "Equipe": current["teams"][t]["name"],
+                        **dict(row, Quantidade=float(row["Quantidade"]))}
+                       for a, t, status, rows in current["extras"] if status == "submitted" for row in rows]
+            if details:
+                st.dataframe(details, hide_index=True)
     if not pilot.closed_at:
         st.caption("O fechamento só é liberado após a entrega de todos os endereços e a conclusão das divergências.")
         if st.button("Fechar piloto e apurar", type="primary", disabled=not pilot.ready()):
@@ -215,22 +210,87 @@ def _capture(st, token, stage, address, code, lines):
     else:
         st.caption("Nenhuma leitura salva neste rascunho.")
     with st.form("ann_deliver_" + ident, enter_to_submit=False):
-        empty = st.checkbox("Endereço conferido e vazio" if stage == FIRST else "Produto não encontrado")
+        empty = st.checkbox("Endereço conferido e vazio" if stage in (FIRST, room.EXTRA) else "Produto não encontrado")
         complete = st.checkbox("Conferi os lançamentos e confirmo o envio" if stage == FIRST else "Conferi toda a tarefa")
         if stage == FIRST:
             st.caption("Só o envio fecha a contagem para conferência e impede novas edições.")
         note = st.text_area("Justificativa da auditoria", max_chars=400) if stage == AUDIT else ""
         if st.form_submit_button({FIRST:"Enviar para conferência", SECOND:"Confirmar 2ª contagem",
-                                  AUDIT:"Validar auditoria"}[stage]):
+                                  AUDIT:"Validar auditoria", room.EXTRA:"Enviar conferência extra"}[stage]):
             def submit():
                 room.action(token, "submit", stage, address, code,
                             empty=empty, complete=complete, note=note, expected=room.draft_version(lines))
                 if stage == FIRST:
                     st.session_state["_annual_last_sent_v3"] = (token, address)
+                if stage in (FIRST, room.EXTRA):
+                    st.session_state.pop("_annual_free_active", None)
+                if stage == room.EXTRA:
+                    st.session_state["_annual_extra_sent"] = (token, address)
             _apply(st, submit)
 
 
+def _free_count(st, token, current):
+    active = st.session_state.get("_annual_free_active")
+    if active and active[0] == token:
+        _, stage, address = active
+        key = room.task_key(stage, address, "", current["role"])
+        if key in current["drafts"]:
+            if st.button("Sair do endereço sem enviar"):
+                st.session_state.pop("_annual_free_active", None)
+                st.rerun()
+            if stage == room.EXTRA:
+                st.info("Conferência extra. Esta contagem não substitui nem soma com a oficial.")
+            _capture(st, token, stage, address, "", current["drafts"][key])
+            return
+    sent = st.session_state.get("_annual_last_sent_v3")
+    if sent and sent[0] == token:
+        st.success(f"{sent[1]} enviado para conferência.")
+    extra_sent = st.session_state.get("_annual_extra_sent")
+    if extra_sent and extra_sent[0] == token:
+        st.success(f"{extra_sent[1]}: conferência extra enviada. Ela não entra no total.")
+
+    def open_at(raw, owner=""):
+        try:
+            address = room.normalize_address(raw)
+            stage, address = room.action(token, "open", address=address, confirm_owner=owner)
+        except room.AddressConflict as exc:
+            st.session_state["_annual_address_conflict"] = (token, address, exc.owner, str(exc))
+            st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
+        else:
+            st.session_state["_annual_free_active"] = (token, stage, address)
+            for key in ("_annual_address_conflict", "_annual_last_sent_v3", "_annual_extra_sent"):
+                st.session_state.pop(key, None)
+            st.rerun()
+
+    with st.form("ann_enter_address", clear_on_submit=True):
+        address = st.text_input("Informe o endereço do S2", max_chars=60)
+        if st.form_submit_button("Abrir endereço", type="primary"):
+            open_at(address)
+    conflict = st.session_state.get("_annual_address_conflict")
+    if conflict and conflict[0] == token:
+        _, address, owner, message = conflict
+        st.warning(f"{address}: {message}")
+        st.caption("Prossiga só se a repetição for intencional. A conferência extra não entra no total oficial.")
+        if st.button("Confirmar conferência extra"):
+            open_at(address, owner)
+        if st.button("Cancelar e escolher outro endereço"):
+            st.session_state.pop("_annual_address_conflict", None)
+            st.rerun()
+    saved = [(stage, a) for stage in (FIRST, room.EXTRA) for a, _ in current["tasks"].get(stage, [])]
+    if saved:
+        st.markdown("**Meus endereços em rascunho**")
+        for stage, a in saved:
+            if st.button(f"Retomar {a}" + (" · Extra" if stage == room.EXTRA else ""),
+                         key=f"ann_resume_{stage}_{a}"):
+                open_at(a)
+
+
 def _worker_stage(st, token, current, stage):
+    if stage == FIRST and current["free"]:
+        _free_count(st, token, current)
+        return
     tasks = current["tasks"].get(stage, [])
     sent = st.session_state.get("_annual_last_sent_v3")
     if stage == FIRST and sent and sent[0] == token:
@@ -267,7 +327,7 @@ def _worker_stage(st, token, current, stage):
     else:
         address, code = st.selectbox("Posição para auditoria", tasks,
             format_func=lambda pair: " · ".join(pair), key="ann_audit_task")
-    _capture(st, token, stage, address, code, current["drafts"][room._key(stage, address, code)])
+    _capture(st, token, stage, address, code, current["drafts"][room.task_key(stage, address, code, current["role"])])
 
 
 def _worker(st, token, current):
@@ -332,7 +392,7 @@ def render(st, *, manager=False):
         _entry(st, False)
         return
     if st.button("Sair do piloto"):
-        for key in (STATE, OPEN, MEMBERSHIPS, "_ann_active_first", "_annual_last_sent_v3"):
+        for key in (STATE, OPEN, MEMBERSHIPS, "_ann_active_first", "_annual_last_sent_v3", "_annual_free_active", "_annual_address_conflict", "_annual_extra_sent"):
             st.session_state.pop(key, None)
         st.rerun()
     if current["role"] != room.COORD and st.session_state.get(OPEN) != token:
