@@ -61,7 +61,7 @@ for page in expected_pages:
     if page == "Dashboard":
         token = "if active=='Dashboard':"
     elif page == "Inventário Anual":
-        token = "render_annual_pilot(st)"
+        token = "render_annual_pilot(st,manager="
     else:
         token = f"elif active=='{page}':"
     if token not in app:

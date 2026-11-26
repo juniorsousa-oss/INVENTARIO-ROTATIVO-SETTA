@@ -1,8 +1,11 @@
 """Interface do piloto anual compartilhado, exclusivamente com dados fictícios."""
-from inventory_annual_pilot import AUDIT, FIRST, SECOND, ELIGIBLE, EXCLUDED, TEAMS, VALIDATED
+from inventory_annual_pilot import AUDIT, FIRST, SECOND, ELIGIBLE, EXCLUDED, VALIDATED
 import inventory_annual_rooms as room
 
 STATE = "_annual_inventory_pilot_code_v2"
+MEMBERSHIPS = "_annual_memberships_v3"
+OPEN = "_annual_open_team_v3"
+PREP = "_annual_prepare_teams_v3"
 
 
 def _apply(st, fn, *args, **kwargs):
@@ -14,47 +17,109 @@ def _apply(st, fn, *args, **kwargs):
         st.rerun()
 
 
-def _entry(st):
+def _add_code(st, manager):
+    with st.form("ann_join", clear_on_submit=True):
+        access = st.text_input("Código de acesso do piloto", type="password", max_chars=45)
+        if st.form_submit_button("Entrar no piloto", type="primary"):
+            def enter():
+                token = access.strip()
+                profile = room.view(token)
+                if profile["role"] == room.COORD and not manager:
+                    raise ValueError("A Coordenação exige login de Gestor no Inventário.")
+                if profile["role"] != room.COORD:
+                    codes = st.session_state.setdefault(MEMBERSHIPS, [])
+                    if token not in codes:
+                        codes.append(token)
+                st.session_state[STATE] = token
+                st.session_state.pop(OPEN, None)
+            _apply(st, enter)
+
+
+def _setup(st):
+    st.subheader("Preparar a contagem")
+    st.caption("Use nomes fictícios. O saldo simulado do S2 é congelado ao iniciar.")
+    plan = st.session_state.get(PREP) or {}
+    if not plan.get("ready"):
+        choices = [2, 4, 6, 8]
+        selected = choices.index(plan["people"]) if plan.get("people") in choices else None
+        people = st.selectbox("Quantas pessoas vão realizar a contagem?", choices, index=selected,
+                              placeholder="Selecione um total par")
+        if people is None:
+            return
+        ids = room.team_ids(people)
+        with st.form("ann_prepare_teams_" + str(people), enter_to_submit=False):
+            title = st.text_input("Nome do inventário", value=plan.get("title", room.TITLE), max_chars=60)
+            teams = {}
+            for i, idx in enumerate(ids, start=1):
+                default = (plan.get("teams") or {}).get(idx, {})
+                st.markdown(f"**Dupla {i}**")
+                teams[idx] = {
+                    "name": st.text_input(f"Nome da equipe {i}", value=default.get("name", f"Equipe {i}"),
+                                          max_chars=60),
+                    "lead": st.text_input(f"Cabeça de chave da equipe {i}", value=default.get("lead", ""),
+                                          max_chars=60),
+                    "assistant": st.text_input(f"Auxiliar da equipe {i}", value=default.get("assistant", ""),
+                                               max_chars=60),
+                }
+            if st.form_submit_button("Confirmar equipes", type="primary"):
+                def confirm_teams():
+                    valid = room.validate_teams(teams, people, title)
+                    st.session_state[PREP] = {**valid, "people": people, "ready": True}
+                _apply(st, confirm_teams)
+        return
+    people, teams = plan["people"], plan["teams"]
+    ids = room.team_ids(people)
+    st.subheader("Distribuir endereços")
+    st.caption(f"{people} pessoas · {len(ids)} dupla(s)")
+    if st.button("Editar formação das equipes"):
+        st.session_state[PREP] = {**plan, "ready": False}
+        st.rerun()
+    with st.form("ann_plan_addresses_" + str(people), enter_to_submit=False):
+        assignment = {a: st.selectbox(f"Equipe de {a}", ids, index=i % len(ids),
+                    format_func=lambda idx: teams[idx]["name"], key=f"ann_assign_{people}_{a}")
+                      for i, a in enumerate(ELIGIBLE)}
+        locked = st.checkbox("Confirmo o bloqueio simulado do S2")
+        if st.form_submit_button("Iniciar piloto", type="primary"):
+            def start():
+                st.session_state[STATE] = room.create_room(assignment, locked, teams=teams, people=people,
+                                                           title=plan["title"])
+                st.session_state.pop(PREP, None)
+            _apply(st, start)
+    for address, reason in EXCLUDED.items():
+        st.caption(f"{address} · Não apto: {reason}. Seu saldo de corte entra apenas na apuração final.")
+
+
+def _entry(st, manager):
+    if not manager:
+        _add_code(st, manager=False)
+        return
     join, create = st.tabs(["Acessar piloto", "Criar piloto"])
     with join:
-        with st.form("ann_join", clear_on_submit=True):
-            access = st.text_input("Código de acesso do piloto", type="password", max_chars=45)
-            if st.form_submit_button("Entrar no piloto", type="primary"):
-                def enter():
-                    token = access.strip()
-                    room.view(token)
-                    st.session_state[STATE] = token
-                _apply(st, enter)
+        _add_code(st, manager=True)
     with create:
-        st.subheader("Preparar a contagem")
-        st.caption("Distribua os endereços aptos do S2. A base fictícia será congelada ao iniciar.")
-        with st.form("ann_setup"):
-            assignment = {a: st.selectbox(f"Dupla para {a}", TEAMS, index=i // 2, key=f"ann_assign_{a}")
-                          for i, a in enumerate(ELIGIBLE)}
-            locked = st.checkbox("Confirmo o bloqueio simulado do S2")
-            if st.form_submit_button("Iniciar piloto", type="primary"):
-                def start():
-                    st.session_state[STATE] = room.create_room(assignment, locked)
-                _apply(st, start)
-        for address, reason in EXCLUDED.items():
-            st.caption(f"{address} · Não apto: {reason}. Seu saldo de corte entra apenas na apuração final.")
+        _setup(st)
 
 
 def _coordinator(st, token, current):
     pilot = current["pilot"]
     st.subheader("Acompanhar endereços")
+    st.text(current["title"])
     st.caption("Saldo de corte: " + pilot.started_at.strftime("%d/%m/%Y às %H:%M"))
     st.progress(sum(pilot.address_status(a) == VALIDATED for a in ELIGIBLE) / len(ELIGIBLE))
+    with st.expander("Equipes e endereços"):
+        st.dataframe([{"Equipe": data["name"], "Cabeça de chave": data["lead"], "Auxiliar": data["assistant"],
+                       "Endereços": ", ".join(a for a in ELIGIBLE if pilot.assignment[a] == idx)}
+                      for idx, data in current["teams"].items()], hide_index=True)
     with st.expander("Códigos de acesso do piloto"):
         st.caption("Cada código acessa apenas um papel. Compartilhe apenas o código da função correspondente.")
-        for role, secret in {room.COORD: token, **room.worker_codes(token)}.items():
-            st.markdown(f"**{role}**")
+        for role, secret in {room.COORD: token, **room.worker_codes(token, pilot.teams)}.items():
+            st.text(current["teams"].get(role, {}).get("name", role))
             st.code(secret, language=None)
     st.subheader("Fila de pendências")
     queue = current["queue"]
     if queue:
         st.dataframe([{"Endereço": a, "Produto": c or "Todo o endereço", "Próxima ação": stage,
-                       "Responsável": responsible, "Rascunho": "Salvo" if draft else "—"}
+                       "Responsável": current["teams"].get(responsible, {}).get("name", responsible), "Rascunho": "Salvo" if draft else "—"}
                       for a, c, stage, responsible, draft in queue], hide_index=True)
     else:
         st.success("Nenhuma pendência na fila.")
@@ -134,32 +199,42 @@ def _capture(st, token, stage, address, code, lines):
                       for i, r in enumerate(lines, start=1)}
             line_id = st.selectbox("Leitura para remover", tuple(labels), format_func=labels.get,
                                    key="ann_remove_" + ident)
+            selected = next(row for row in lines if row["id"] == line_id)
+            with st.form("ann_edit_" + ident + line_id, enter_to_submit=False):
+                updated_product = st.text_input("Produto do lançamento", value=selected["product"], max_chars=32,
+                                                disabled=bool(code))
+                updated_lot = st.text_input("Lote do lançamento", value=selected["lot"], max_chars=32)
+                updated_qty = st.text_input("Quantidade do lançamento", value=selected["quantity"], max_chars=18)
+                if st.form_submit_button("Salvar edição"):
+                    def edit():
+                        item = room.reading(updated_product, address, updated_lot, updated_qty, selected["label_id"])
+                        room.action(token, "edit", stage, address, code, item=item, line_id=line_id, expected=selected)
+                    _apply(st, edit)
             if st.button("Remover leitura selecionada", key="ann_del_" + ident):
-                _apply(st, room.action, token, "remove", stage, address, code, line_id=line_id)
+                _apply(st, room.action, token, "remove", stage, address, code, line_id=line_id, expected=selected)
     else:
         st.caption("Nenhuma leitura salva neste rascunho.")
     with st.form("ann_deliver_" + ident, enter_to_submit=False):
         empty = st.checkbox("Endereço conferido e vazio" if stage == FIRST else "Produto não encontrado")
-        complete = st.checkbox("Conferi toda a tarefa")
+        complete = st.checkbox("Conferi os lançamentos e confirmo o envio" if stage == FIRST else "Conferi toda a tarefa")
+        if stage == FIRST:
+            st.caption("Só o envio fecha a contagem para conferência e impede novas edições.")
         note = st.text_area("Justificativa da auditoria", max_chars=400) if stage == AUDIT else ""
-        if st.form_submit_button({FIRST:"Entregar endereço", SECOND:"Confirmar 2ª contagem",
+        if st.form_submit_button({FIRST:"Enviar para conferência", SECOND:"Confirmar 2ª contagem",
                                   AUDIT:"Validar auditoria"}[stage]):
-            _apply(st, room.action, token, "submit", stage, address, code,
-                   empty=empty, complete=complete, note=note)
+            def submit():
+                room.action(token, "submit", stage, address, code,
+                            empty=empty, complete=complete, note=note, expected=room.draft_version(lines))
+                if stage == FIRST:
+                    st.session_state["_annual_last_sent_v3"] = (token, address)
+            _apply(st, submit)
 
 
-def _worker(st, token, current):
-    if current["closed"]:
-        st.info("Piloto encerrado. Consulte a Coordenação.")
-        return
-    tasksets = current["tasks"]
-    if current["role"] == room.AUDITOR:
-        stage = AUDIT
-    else:
-        stage = st.radio("Etapa da dupla", (FIRST, SECOND), horizontal=True,
-                         format_func=lambda value: value + " cega", key="ann_stage")
-    tasks = tasksets.get(stage, [])
-    st.subheader(stage + (" cega" if stage != AUDIT else ""))
+def _worker_stage(st, token, current, stage):
+    tasks = current["tasks"].get(stage, [])
+    sent = st.session_state.get("_annual_last_sent_v3")
+    if stage == FIRST and sent and sent[0] == token:
+        st.success(f"{sent[1]} enviado para conferência.")
     if not tasks:
         if stage == FIRST:
             st.session_state.pop("_ann_active_first", None)
@@ -170,44 +245,109 @@ def _worker(st, token, current):
         allowed = [a for a, _ in tasks]
         if active not in allowed:
             st.session_state.pop("_ann_active_first", None)
-            option = st.selectbox("Endereço da sua dupla", allowed, index=None,
+            option = st.selectbox("Endereço da sua equipe", allowed, index=None,
                                   placeholder="Selecione o endereço para contar")
             if st.button("Abrir endereço", type="primary", disabled=option is None):
                 st.session_state["_ann_active_first"] = option
+                st.session_state.pop("_annual_last_sent_v3", None)
                 st.rerun()
-            st.caption("Abra um endereço por vez. Depois de fechar, escolha o próximo da sua dupla.")
+            st.caption("Abra um endereço por vez. Você pode sair e voltar sem entregar a contagem.")
             return
         address, code = active, ""
-        if st.button("Voltar aos endereços"):
+        if st.button("Sair do endereço sem enviar"):
             st.session_state.pop("_ann_active_first", None)
             st.rerun()
+    elif stage == SECOND:
+        addresses = sorted({a for a, _ in tasks})
+        address = st.selectbox("Endereço para recontar", addresses,
+                               format_func=lambda a: f"{a} · {sum(x == a for x, _ in tasks)} produto(s)")
+        products = [c for a, c in tasks if a == address]
+        code = st.selectbox("Produto pendente de recontagem", products, key="ann_second_code_" + address)
+        st.caption("A recontagem é cega: não são exibidos o saldo de corte nem a contagem anterior.")
     else:
-        address, code = st.selectbox(
-            {SECOND:"Posição para recontar", AUDIT:"Posição para auditoria"}[stage],
-            tasks, format_func=lambda pair: " · ".join(pair), key="ann_task_" + stage)
+        address, code = st.selectbox("Posição para auditoria", tasks,
+            format_func=lambda pair: " · ".join(pair), key="ann_audit_task")
     _capture(st, token, stage, address, code, current["drafts"][room._key(stage, address, code)])
 
 
-def render(st):
+def _worker(st, token, current):
+    if current["closed"]:
+        st.info("Inventário encerrado. Consulte a Coordenação.")
+        return
+    tasksets = current["tasks"]
+    if FIRST in tasksets:
+        first, second = st.tabs(["Contagem", "Recontagem"])
+        with first:
+            _worker_stage(st, token, current, FIRST)
+        with second:
+            _worker_stage(st, token, current, SECOND)
+    elif SECOND in tasksets:
+        st.subheader("Recontagem")
+        _worker_stage(st, token, current, SECOND)
+    else:
+        st.subheader("Auditoria")
+        _worker_stage(st, token, current, AUDIT)
+
+
+def _inventory_list(st, manager):
+    st.subheader("Meus inventários")
+    codes = list(st.session_state.get(MEMBERSHIPS, []))
+    for token in codes:
+        try:
+            current = room.view(token)
+        except ValueError:
+            st.session_state[MEMBERSHIPS].remove(token)
+            continue
+        with st.container(border=True):
+            st.text(current["display"])
+            st.text(current["title"])
+            st.caption("Encerrado" if current["closed"] else "Em andamento")
+            if st.button("Abrir inventário da equipe", key="annual_open_" + current["room_id"] + "_" + current["role"]):
+                if st.session_state.get(STATE) != token:
+                    st.session_state.pop("_ann_active_first", None)
+                st.session_state[STATE] = token
+                st.session_state[OPEN] = token
+                st.rerun()
+    with st.expander("Acessar outro inventário"):
+        _add_code(st, manager)
+
+
+def render(st, *, manager=False):
     st.warning("PILOTO · Dados fictícios do S2. Sem integração com o estoque real ou o Protheus.")
-    st.caption("Use códigos individuais para testar em aparelhos separados. Os rascunhos salvos ficam neste piloto por até três dias e dependem de o servidor não ser recriado.")
+    st.caption("Os rascunhos salvos ficam neste piloto por até três dias e dependem de o servidor não ser recriado.")
     token = st.session_state.get(STATE)
     if not token:
-        _entry(st)
+        _entry(st, manager)
         return
     try:
         current = room.view(token)
     except ValueError as exc:
         st.session_state.pop(STATE, None)
         st.warning(str(exc))
-        _entry(st)
+        _entry(st, manager)
         return
-    left, right = st.columns([3, 2])
-    left.markdown("**Acesso:** " + current["role"])
-    if right.button("Sair do piloto"):
+    if current["role"] == room.COORD and not manager:
         st.session_state.pop(STATE, None)
-        st.session_state.pop("_ann_active_first", None)
+        st.warning("A Coordenação exige login de Gestor no Inventário.")
+        _entry(st, False)
+        return
+    if st.button("Sair do piloto"):
+        for key in (STATE, OPEN, MEMBERSHIPS, "_ann_active_first", "_annual_last_sent_v3"):
+            st.session_state.pop(key, None)
         st.rerun()
+    if current["role"] != room.COORD and st.session_state.get(OPEN) != token:
+        codes = st.session_state.setdefault(MEMBERSHIPS, [])
+        if token not in codes:
+            codes.append(token)
+        _inventory_list(st, manager)
+        return
+    st.text("Acesso: " + current["display"])
+    if current["role"] != room.COORD:
+        st.caption(current["title"])
+        if st.button("Voltar aos meus inventários"):
+            st.session_state.pop(OPEN, None)
+            st.session_state.pop("_ann_active_first", None)
+            st.rerun()
     st.button("Atualizar fila", key="ann_update", help="Busca alterações salvas pelas outras duplas.")
     if current["role"] == room.COORD:
         _coordinator(st, token, current)

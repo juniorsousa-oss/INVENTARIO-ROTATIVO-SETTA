@@ -101,4 +101,69 @@ class AnnualRoomsTests(unittest.TestCase):
         self.assertEqual(result["queue"], [])
         self.assertEqual(result["pilot"].totals()[0][-1], -10)
         self.assertEqual([line["Quantidade"] for line in result["evidence"][r._key(AUDIT,"A-01","SIM-001")]], [5,4])
-        self.assertEqual(set(self.view(self.a)), {"role", "closed", "tasks", "drafts"})
+        self.assertEqual(set(self.view(self.a)), {"role", "closed", "tasks", "drafts", "display", "title", "room_id"})
+
+    def configured(self, people):
+        ids = r.team_ids(people)
+        teams = {idx: {"name": f"Equipe {n}", "lead": f"T{n} Líder", "assistant": f"T{n} Apoio"}
+                 for n, idx in enumerate(ids, start=1)}
+        assignment = {a: ids[i % len(ids)] for i, a in enumerate(ELIGIBLE)}
+        return ids, teams, assignment
+
+    def test_management_validates_parity_named_roles_distinct_members_and_coverage(self):
+        for value in (0, 1, 3, 5, 10, 4.0, "4"):
+            with self.assertRaises(ValueError):
+                r.team_ids(value)
+        ids, teams, assignment = self.configured(6)
+        with self.assertRaises(ValueError):
+            r.create_room(dict.fromkeys(ELIGIBLE, ids[0]), True, teams=teams, people=6, path=self.path)
+        for changes in ({"name": "equIpe 1"}, {"lead": " t1   líder "}, {"assistant": " "}):
+            bad = {**teams, ids[1]: {**teams[ids[1]], **changes}}
+            with self.assertRaises(ValueError):
+                r.create_room(assignment, True, teams=bad, people=6, path=self.path)
+        key = r.create_room(assignment, True, teams=teams, people=6, title="Piloto de turno", path=self.path)
+        current = self.view(key)
+        self.assertEqual(current["teams"], teams)
+        tokens = r.worker_codes(key, ids)
+        self.assertEqual(len(tokens), 4)
+        team = self.view(tokens[ids[2]])
+        self.assertEqual((team["display"], team["title"], team["tasks"][FIRST]), ("Equipe 3", "Piloto de turno", [("B-01","")]))
+        self.assertNotIn("teams", team)
+        self.qr(tokens[ids[0]], FIRST, "A-01", "", "00000001,L1,7")
+        self.act(tokens[ids[0]], "submit", FIRST, "A-01", complete=True)
+        self.assertTrue(self.view(tokens[ids[1]])["tasks"][SECOND])
+        self.assertFalse(self.view(tokens[ids[2]])["tasks"][SECOND])
+
+    def test_single_team_needs_independent_recount_and_separate_audit(self):
+        ids, teams, assignment = self.configured(2)
+        key = r.create_room(assignment, True, teams=teams, people=2, path=self.path)
+        tokens = r.worker_codes(key, ids)
+        self.qr(tokens[ids[0]], FIRST, "A-01", "", "00000001,L1,8")
+        self.act(tokens[ids[0]], "submit", FIRST, "A-01", complete=True)
+        self.assertFalse(self.view(tokens[ids[0]])["tasks"][SECOND])
+        reviewer = tokens[r.INDEPENDENT]
+        self.assertNotIn(FIRST, self.view(reviewer)["tasks"])
+        self.qr(reviewer, SECOND, "A-01", "SIM-001", "00000001,L1,7")
+        self.act(reviewer, "submit", SECOND, "A-01", "SIM-001", complete=True)
+        self.assertIn(("A-01", "SIM-001"), self.view(tokens[r.AUDITOR])["tasks"][AUDIT])
+
+    def test_edit_and_final_submit_protect_against_stale_or_final_draft(self):
+        key = r._key(FIRST, "A-01")
+        self.qr(self.a, FIRST, "A-01", "", "00000001,L1,3")
+        lines_before = self.view(self.a)["drafts"][key]
+        line = lines_before[0]
+        updated = r.reading("00000001", "A-01", "L2", "9")
+        self.act(self.a, "edit", FIRST, "A-01", item=updated, expected=line, line_id=line["id"])
+        with self.assertRaisesRegex(ValueError, "outro aparelho"):
+            self.act(self.a, "edit", FIRST, "A-01", item=updated, expected=line, line_id=line["id"])
+        with self.assertRaisesRegex(ValueError, "outro aparelho"):
+            self.act(self.a, "submit", FIRST, "A-01", complete=True, expected=r.draft_version(lines_before))
+        self.assertFalse(self.view(self.b)["tasks"][SECOND])
+        lines = self.view(self.a)["drafts"][key]
+        self.assertEqual(r.grouped(lines), [{"Produto":"SIM-001", "Lote":"L2", "Quantidade":9}])
+        self.act(self.a, "submit", FIRST, "A-01", complete=True, expected=r.draft_version(lines))
+        self.assertIn(("A-01", "SIM-001"), self.view(self.b)["tasks"][SECOND])
+        self.assertNotIn(key, self.view(self.a)["drafts"])
+        for event in ("edit", "remove", "submit"):
+            with self.assertRaises(ValueError):
+                self.act(self.a, event, FIRST, "A-01", item=updated, expected=line, line_id=line["id"])

@@ -15,12 +15,12 @@ import tempfile
 import time
 
 from inventory_annual_pilot import (
-    AUDIT, FIRST, SECOND, VALIDATED, CATALOG, ELIGIBLE, TEAMS, AnnualPilot, Position, qty,
+    AUDIT, FIRST, SECOND, CATALOG, ELIGIBLE, TEAMS, INDEPENDENT, AnnualPilot, Position, qty,
 )
 
 COORD = "Coordenação"
 AUDITOR = "Auditoria"
-WORKERS = (*TEAMS, AUDITOR)
+TITLE = "Inventário anual S2"
 PATH = Path(tempfile.gettempdir()) / "setta-annual-demo-v2" / "rooms.sqlite3"
 TTL = 3 * 24 * 60 * 60
 MAX_ROOMS = 200
@@ -75,17 +75,55 @@ def _sha(token):
     return sha256(token.encode("ascii")).hexdigest()
 
 
-def worker_codes(coordinator_code):
+def worker_roles(teams):
+    return (*teams, *((INDEPENDENT,) if len(teams) == 1 else ()), AUDITOR)
+
+
+def worker_codes(coordinator_code, teams=TEAMS):
     return {role: hmac_new(coordinator_code.encode("ascii"), role.encode(), sha256).hexdigest()[:32]
-            for role in WORKERS}
+            for role in worker_roles(teams)}
 
 
-def _state(pilot, drafts=None, evidence=None):
+def _state(pilot, drafts=None, evidence=None, *, info=None):
     return {"assignment": pilot.assignment, "started": pilot.started_at.isoformat(),
             "closed": pilot.closed_at.isoformat() if pilot.closed_at else None,
             "snapshot": pilot._snapshot, "system": pilot._total, "catalog": pilot._catalog,
             "positions": {a: {k: asdict(row) for k, row in rows.items()} for a, rows in pilot.positions.items()},
-            "drafts": drafts or {}, "evidence": evidence or {}}
+            "drafts": drafts or {}, "evidence": evidence or {}, "info": info or {}}
+
+
+def team_ids(people):
+    if type(people) is not int or not 2 <= people <= len(ELIGIBLE) * 2 or people % 2:
+        raise ValueError("Escolha um total par de 2 a 8 pessoas para formar as duplas do piloto.")
+    return tuple(f"EQ-{i:02}" for i in range(1, people // 2 + 1))
+
+
+def _label(value, name):
+    value = " ".join(str(value or "").split())
+    if not value or len(value) > 60:
+        raise ValueError(f"Preencha {name} (até 60 caracteres).")
+    return value
+
+
+def validate_teams(teams, people, title):
+    ids = team_ids(people)
+    if not isinstance(teams, dict) or set(teams) != set(ids):
+        raise ValueError("Defina uma equipe para cada dupla de contagem.")
+    names, members = set(), set()
+    out = {}
+    for idx in ids:
+        row = teams[idx]
+        name = _label(row.get("name"), "o nome de cada equipe")
+        head = _label(row.get("lead"), "o nome do cabeça de chave")
+        assistant = _label(row.get("assistant"), "o nome do auxiliar")
+        members.update((head.casefold(), assistant.casefold()))
+        names.add(name.casefold())
+        out[idx] = {"name": name, "lead": head, "assistant": assistant}
+    if len(names) != len(ids):
+        raise ValueError("Cada equipe precisa ter um nome diferente.")
+    if len(members) != people:
+        raise ValueError("Cada pessoa só pode participar de uma dupla, em uma função.")
+    return {"title": _label(title, "o nome do inventário"), "teams": out}
 
 
 def _restore(state):
@@ -126,9 +164,10 @@ def _encode(obj):
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
-def create_room(assignment, locked, *, path=PATH):
+def create_room(assignment, locked, *, teams=None, people=None, title=TITLE, path=PATH):
+    info = validate_teams(teams, people, title) if teams is not None else {}
     p = AnnualPilot()
-    p.start(assignment, locked)
+    p.start(assignment, locked, teams=tuple(info["teams"]) if info else TEAMS)
     token = secrets.token_urlsafe(24)
     room = secrets.token_hex(8)
     now = int(time.time())
@@ -137,8 +176,8 @@ def create_room(assignment, locked, *, path=PATH):
         conn.execute("DELETE FROM annual_rooms WHERE expires <= ?", (now,))
         if conn.execute("SELECT COUNT(*) FROM annual_rooms").fetchone()[0] >= MAX_ROOMS:
             raise ValueError("Limite de pilotos em uso. Entre em um piloto existente.")
-        conn.execute("INSERT INTO annual_rooms VALUES (?,?,?)", (room, now + TTL, _encode(_state(p))))
-        keys = {COORD: token, **worker_codes(token)}
+        conn.execute("INSERT INTO annual_rooms VALUES (?,?,?)", (room, now + TTL, _encode(_state(p, info=info))))
+        keys = {COORD: token, **worker_codes(token, p.teams)}
         conn.executemany("INSERT INTO annual_access VALUES (?,?,?)",
                          [(_sha(code), room, role) for role, code in keys.items()])
     return token
@@ -163,9 +202,9 @@ def _key(stage, address, product=""):
 
 def _assert_task(pilot, role, stage, address, product):
     pilot._require_open()
-    if stage == FIRST and role in TEAMS and pilot.assignment.get(address) == role and address not in pilot.positions and product == "":
+    if stage == FIRST and role in pilot.teams and pilot.assignment.get(address) == role and address not in pilot.positions and product == "":
         return
-    if stage == SECOND and role in TEAMS and (address, product) in pilot.queue(role):
+    if stage == SECOND and (address, product) in pilot.queue(role):
         return
     if stage == AUDIT and role == AUDITOR and (address, product) in pilot.audit_queue():
         return
@@ -187,9 +226,13 @@ def _draft_details(rows):
 def view(token, *, path=PATH):
     """Only return the caller's workflow view; counter views have no cut or peer counts."""
     with _connect(path) as conn:
-        _, role, state = _authorized(conn, token)
+        room_id, role, state = _authorized(conn, token)
     p = _restore(state)
-    common = {"role": role, "closed": bool(p.closed_at)}
+    info = state.get("info") or {}
+    teams = info.get("teams") or {idx: {"name": idx, "lead": "", "assistant": ""} for idx in p.teams}
+    display = teams.get(role, {}).get("name", role)
+    common = {"role": role, "closed": bool(p.closed_at), "display": display, "title": info.get("title", TITLE),
+              "room_id": room_id}
     if role == COORD:
         queue = []
         for a, team in p.assignment.items():
@@ -198,13 +241,15 @@ def view(token, *, path=PATH):
                 queue.append((a, "", FIRST, team, bool(state["drafts"].get(_key(FIRST, a)))))
             for code, pos in p.positions.get(a, {}).items():
                 if pos.stage in (SECOND, AUDIT):
-                    responsible = next(t for t in TEAMS if t != team) if pos.stage == SECOND else AUDITOR
+                    responsible = p.recount_owner(a) if pos.stage == SECOND else AUDITOR
                     queue.append((a, code, pos.stage, responsible, bool(state["drafts"].get(_key(pos.stage, a, code)))))
-        return {**common, "pilot": p, "queue": queue, "evidence": _draft_details(state["evidence"]) if p.closed_at else {}}
+        return {**common, "pilot": p, "teams": teams, "queue": queue, "evidence": _draft_details(state["evidence"]) if p.closed_at else {}}
     tasks = {}
     if not p.closed_at:
-        if role in TEAMS:
+        if role in p.teams:
             tasks[FIRST] = [(a, "") for a in ELIGIBLE if p.assignment[a] == role and a not in p.positions]
+            tasks[SECOND] = p.queue(role)
+        elif role == INDEPENDENT:
             tasks[SECOND] = p.queue(role)
         else:
             tasks[AUDIT] = p.audit_queue()
@@ -213,8 +258,12 @@ def view(token, *, path=PATH):
     return {**common, "tasks": tasks, "drafts": own}
 
 
+def draft_version(lines):
+    return sha256(_encode(lines).encode()).hexdigest()
+
+
 def action(token, event, stage="", address="", product="", *, item=None, repeat=False, line_id="",
-           empty=False, complete=False, note="", path=PATH):
+           empty=False, complete=False, note="", expected=None, path=PATH):
     """Recheck permissions and mutate the freshest room in one transaction."""
     with _connect(path) as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -242,10 +291,21 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
                 lines.append({**asdict(item), "quantity": str(item.quantity), "id": secrets.token_hex(8)})
                 drafts[key] = lines
             elif event == "remove":
-                if not any(r["id"] == line_id for r in lines):
-                    raise ValueError("Lançamento não encontrado. Atualize o rascunho.")
+                old = next((r for r in lines if r["id"] == line_id), None)
+                if old is None or (expected is not None and expected != old):
+                    raise ValueError("O rascunho mudou em outro aparelho. Atualize e confira antes de remover.")
                 drafts[key] = [r for r in lines if r["id"] != line_id]
+            elif event == "edit":
+                if not isinstance(item, Reading) or item.address != address or (product and item.product != product):
+                    raise ValueError("Mantenha o endereço e o produto da tarefa de recontagem.")
+                index = next((i for i, row in enumerate(lines) if row["id"] == line_id), None)
+                if index is None or lines[index] != expected:
+                    raise ValueError("O rascunho mudou em outro aparelho. Atualize e confira antes de editar.")
+                lines[index] = {**asdict(item), "quantity": str(item.quantity), "id": line_id}
+                drafts[key] = lines
             elif event == "submit":
+                if expected is not None and expected != draft_version(lines):
+                    raise ValueError("O rascunho mudou em outro aparelho. Atualize e confira antes de enviar.")
                 totals = defaultdict(Decimal)
                 for r in lines:
                     totals[r["product"]] += qty(r["quantity"])
@@ -261,4 +321,4 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
                 drafts.pop(key, None)
             else:
                 raise ValueError("Ação não reconhecida.")
-        conn.execute("UPDATE annual_rooms SET state=? WHERE id=?", (_encode(_state(p, drafts, evidence)), room))
+        conn.execute("UPDATE annual_rooms SET state=? WHERE id=?", (_encode(_state(p, drafts, evidence, info=state.get("info"))), room))

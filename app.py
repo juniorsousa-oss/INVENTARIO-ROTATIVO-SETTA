@@ -1215,6 +1215,10 @@ with st.sidebar:
     st.session_state.pop('_annual_inventory_pilot_v1',None)
     st.session_state.pop('_annual_inventory_pilot_code_v2',None)
     st.session_state.pop('_ann_active_first',None)
+    st.session_state.pop('_annual_open_team_v3',None)
+    st.session_state.pop('_annual_memberships_v3',None)
+    st.session_state.pop('_annual_last_sent_v3',None)
+    st.session_state.pop('_annual_prepare_teams_v3',None)
     _setta_close_sidebar()
     st.rerun()
 
@@ -1240,7 +1244,7 @@ if _annual_pilot_active:
  from inventory_annual_ui import render as render_annual_pilot
  _sidebar_status_slot.info('Inventário Anual · Piloto sem dados reais')
  setta_shell.render_page(st,'Inventário Anual')
- render_annual_pilot(st)
+ render_annual_pilot(st,manager=_can_manage_inventory() and _session_profile()=='Gestor')
  st.stop()
 
 # Ao abrir/recarregar o navegador, a sessão sempre consulta as versões
