@@ -30,8 +30,8 @@ def _encoded(name):
     return b64encode((_ASSETS / name).read_bytes()).decode("ascii")
 
 
-@lru_cache(maxsize=1)
 def _stylesheet():
+    # A produção pode atualizar o CSS sem reiniciar o processo Streamlit.
     return (_ASSETS / "setta-inventory.css").read_text(encoding="utf-8")
 
 
