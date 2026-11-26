@@ -7,11 +7,11 @@ const scanner = readFileSync(new URL("../assets/annual-camera.js", import.meta.u
 const vendored = readFileSync(new URL("../assets/jsqr-1.4.0.js", import.meta.url), "utf8");
 
 function fixture(getUserMedia, role = "00000001,000101,3") {
-    const open = new EventTarget(), close = new EventTarget();
+    const open = new EventTarget(), close = new EventTarget(), resume = new EventTarget();
     const video = {readyState: 2, videoWidth: 32, videoHeight: 32, play: async () => {}, pause: () => {}};
     const status = {textContent: ""};
     const parent = { getClientRects: () => [1], querySelector:
-        selector => ({"[data-open]":open, "[data-close]":close, video, "[role=status]":status})[selector] };
+        selector => ({"[data-open]":open, "[data-close]":close, "[data-resume]":resume, video, "[role=status]":status})[selector] };
     const doc = new EventTarget();
     doc.createElement = () => ({getContext: () => ({drawImage() {}, getImageData: () => ({data: [], width: 32, height: 32})})});
     const window = new EventTarget(), outputs = [];
@@ -20,7 +20,7 @@ function fixture(getUserMedia, role = "00000001,000101,3") {
         decodeQR: () => ({data: role}),
     });
     const dispose = init({parentElement:parent, setTriggerValue: (...args) => outputs.push(args)});
-    return {open, close, video, status, outputs, doc, dispose};
+    return {open, close, resume, video, status, outputs, doc, dispose};
 }
 
 function trackFixture() {
@@ -72,4 +72,21 @@ test("unmount during a pending permission prompt releases a late camera stream",
     await flush();
     assert.equal(tracks.stops, 1);
     assert.deepEqual(fx.outputs, []);
+});
+
+
+test("offers a new tap if the browser postpones playing an authorized stream", async () => {
+    const tracks = trackFixture();
+    const fx = fixture(async () => tracks.stream);
+    fx.video.play = async () => { throw new DOMException("", "NotAllowedError"); };
+    click(fx.open);
+    await flush();
+    assert.equal(fx.resume.hidden, false);
+    assert.equal(tracks.stops, 0);
+    fx.video.play = async () => {};
+    click(fx.resume);
+    await flush();
+    assert.deepEqual(fx.outputs, [["scanned", "00000001,000101,3"]]);
+    assert.equal(tracks.stops, 1);
+    fx.dispose();
 });

@@ -6,6 +6,7 @@ ASSETS = Path(__file__).with_name("assets")
 HTML = """
 <button type="button" data-open>Abrir câmera para ler QR</button>
 <button type="button" data-close hidden>Fechar câmera</button>
+<button type="button" data-resume hidden>Iniciar prévia da câmera</button>
 <video playsinline muted autoplay hidden aria-label="Imagem da câmera"></video>
 <div role="status" aria-live="polite"></div>
 """
