@@ -49,11 +49,19 @@ def render_shell(st, sidebar_open):
 
 
 def render_top(st):
+    try:
+        navigation = (_ASSETS / "setta-inventory-navigation.js").read_text(encoding="utf-8")
+    except OSError:
+        navigation = ""
     st.html(
         '<header class="setta-inv-top" aria-label="Gestão de Estoque Setta">'
         '<span class="setta-inv-mark">'
         f'<img src="data:image/svg+xml;base64,{_encoded("setta-logo-oficial.svg")}" alt="Setta">'
         '</span><b>Inventário</b><small>Gestão de estoque</small></header>'
+        '<div class="setta-inv-route-loader" role="status" aria-live="polite">'
+        'Carregando aba…</div>'
+        + (f'<script>{navigation}</script>' if navigation else ""),
+        unsafe_allow_javascript=bool(navigation),
     )
 
 
