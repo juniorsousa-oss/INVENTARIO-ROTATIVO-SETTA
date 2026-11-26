@@ -196,7 +196,8 @@ class AnnualRoomsTests(unittest.TestCase):
             self.act(b, "open", address="A-01")
         self.assertEqual(conflict.exception.name, "Pessoa 1 / Pessoa 2")
         self.assertFalse(conflict.exception.submitted)
-        self.qr(a,FIRST,"A-01","","00000001,L1,10")
+        self.qr(a,FIRST,"A-01","","00000001,000101,6")
+        self.qr(a,FIRST,"A-01","","00000001,000102,4")
         self.qr(a,FIRST,"A-01","","00000002,L2,5")
         self.act(a,"submit",FIRST,"A-01",complete=True)
         with self.assertRaises(r.AddressConflict) as counted:
@@ -211,7 +212,7 @@ class AnnualRoomsTests(unittest.TestCase):
         for address, code, amount in (("A-02","00000001",3),("B-01","00000003",4),("B-02","",0)):
             self.act(b,"open",address=address)
             if code:
-                self.qr(b,FIRST,address,"",f"{code},L1,{amount}")
+                self.qr(b,FIRST,address,"",f"{code},000101,{amount}")
             self.act(b,"submit",FIRST,address,complete=True,empty=not code)
         self.act(key,"close")
         result = self.view(key)
@@ -228,12 +229,58 @@ class AnnualRoomsTests(unittest.TestCase):
             except r.AddressConflict as exc:
                 return exc
         with ThreadPoolExecutor(2) as executor:
-            results = list(executor.map(claim, [(a,"Livre – 02"),(b,"  LIVRE-02 ")]))
+            results = list(executor.map(claim, [(a,"a – 01"),(b,"  A-01 ")]))
         self.assertEqual(sum(isinstance(o, r.AddressConflict) for o in results),1)
-        self.assertIn((FIRST,"LIVRE-02"),results)
-        self.assertEqual(list(self.view(key)["pilot"].assignment),["LIVRE-02"])
+        self.assertIn((FIRST,"A-01"),results)
+        self.assertEqual(list(self.view(key)["pilot"].assignment),["A-01"])
         winner = b if isinstance(results[0],r.AddressConflict) else a
-        self.qr(winner,FIRST,"LIVRE-02","","00000001,000101,1")
-        self.act(winner,"submit",FIRST,"LIVRE-02",complete=True)
+        self.qr(winner,FIRST,"A-01","","00000001,000101,1")
+        self.act(winner,"submit",FIRST,"A-01",complete=True)
         receiver = a if winner == b else b
-        self.assertEqual(self.view(receiver)["tasks"][SECOND],[("LIVRE-02","SIM-001")])
+        self.assertEqual(self.view(receiver)["tasks"][SECOND],[("A-01","SIM-001"),("A-01","SIM-002")])
+
+    def test_new_pilot_validates_address_book_without_assigning_addresses(self):
+        c,(a,b,_) = self.free_room()
+        for code,message in (("B-20","não encontrado"),("X-01","não é apto"),("E2-01","outro armazém")):
+            with self.assertRaisesRegex(ValueError,message):
+                self.act(a,"open",address=code)
+        self.assertFalse(self.view(c)["pilot"].assignment)
+        self.assertEqual(self.act(b,"open",address=" b-02 "),(FIRST,"B-02"))
+
+    def test_equal_total_lot_swap_recount_and_zero_financial_delta(self):
+        c,(a,b,_) = self.free_room()
+        self.act(a,"open",address="A-01")
+        self.qr(a,FIRST,"A-01","","00000001,000101,4")
+        self.qr(a,FIRST,"A-01","","00000001,000102,6")
+        self.qr(a,FIRST,"A-01","","00000002,LOTE-NOVO,5")
+        self.act(a,"submit",FIRST,"A-01",complete=True)
+        self.assertEqual(self.view(b)["tasks"][SECOND],[("A-01","SIM-001")])
+        self.assertEqual(self.view(b)["drafts"][r.task_key(SECOND,"A-01","SIM-001",self.view(b)["role"])],[])
+        self.qr(b,SECOND,"A-01","SIM-001","00000001,000101,4")
+        self.qr(b,SECOND,"A-01","SIM-001","00000001,000102,6")
+        self.act(b,"submit",SECOND,"A-01","SIM-001",complete=True)
+        for address,payload in [("A-02","00000001,000101,3"),("B-01","00000003,000301,4"),("B-02","")]:
+            self.act(a,"open",address=address)
+            if payload:
+                self.qr(a,FIRST,address,"",payload)
+            self.act(a,"submit",FIRST,address,empty=not payload,complete=True)
+        self.act(c,"close")
+        p=self.view(c)["pilot"]
+        self.assertEqual(p.totals()[0][6:],(0,0))
+        self.assertEqual([(item[2],item[7]) for item in p.lot_discrepancies()],[("000101",-2),("000102",2)])
+
+    def test_recount_with_third_lot_distribution_goes_to_audit(self):
+        c,(a,b,u) = self.free_room()
+        self.act(a,"open",address="A-01")
+        for payload in ("00000001,000101,4","00000001,000102,6","00000002,000201,5"):
+            self.qr(a,FIRST,"A-01","",payload)
+        self.act(a,"submit",FIRST,"A-01",complete=True)
+        for payload in ("00000001,000101,5","00000001,000102,5"):
+            self.qr(b,SECOND,"A-01","SIM-001",payload)
+        self.act(b,"submit",SECOND,"A-01","SIM-001",complete=True)
+        self.assertEqual(self.view(u)["tasks"][AUDIT],[("A-01","SIM-001")])
+        for payload in ("00000001,000101,6","00000001,000102,4"):
+            self.qr(u,AUDIT,"A-01","SIM-001",payload)
+        self.act(u,"submit",AUDIT,"A-01","SIM-001",complete=True,note="Conferidos os dois lotes.")
+        row=self.view(c)["pilot"].positions["A-01"]["SIM-001"]
+        self.assertEqual((row.final,row.final_lots,row.audit_note),(10,{"000101":6,"000102":4},"Conferidos os dois lotes."))

@@ -211,7 +211,7 @@ pelo nome da equipe em **Meus inventários**. Cada código libera a contagem
 atribuída e, quando aplicável, uma aba **Recontagem** independente e cega.
 
 Para a 1ª contagem, digite o endereço do S2 e abra a tarefa, sem atribuição
-prévia. O piloto exclui os endereços explicitamente não aptos. Se outra equipe
+prévia. Novos pilotos validam no cadastro fictício se o endereço existe, é do S2 e está apto. Os quatro endereços aptos são A-01, A-02, B-01 e B-02; X-01 não é apto e E2-01 pertence a outro armazém. Se outra equipe
 já abriu ou enviou o mesmo endereço, o aplicativo identifica a equipe e
 pede confirmação antes de permitir uma conferência extra. Essa conferência
 é registrada separadamente e nunca entra no total oficial. Leia as etiquetas
@@ -229,6 +229,12 @@ lançar separadamente produto, lote e quantidade. O campo aceita leitores que
 digitam o conteúdo; também é possível colá-lo. Não há câmera embutida.
 A mesma combinação de endereço, produto e lote acumula as quantidades;
 lotes diferentes ficam separados. Em leituras idênticas, confirme que se
-trata de outro volume antes de somar. A Coordenação acompanha a etapa e o
-responsável; o fechamento mantém o rastreio por lote. Sem ligação com estoque
+trata de outro volume antes de somar. A Coordenação acompanha a etapa e o responsável. Nos novos pilotos,
+`SIM-001` é o item rastreado por lote. No A-01, o corte é 6 no lote
+`000101` e 4 no `000102`. Se a contagem for 4 e 6, respectivamente,
+o total por produto bate, mas a distribuição por lote gera recontagem.
+Se a segunda distribuição não confirmar nem a primeira nem o corte, segue
+para auditoria. O fechamento mostra as diferenças por lote e calcula o valor
+apenas pela diferença de quantidade do produto. Pilotos anteriores conservam
+suas regras e dados de corte; crie um novo piloto para testar. Sem ligação com estoque
 real, Rotativo ou Protheus.
