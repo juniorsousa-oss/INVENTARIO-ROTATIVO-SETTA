@@ -1110,19 +1110,21 @@ def _current_inventory_page():
  return value
 
 with st.sidebar:
- st.html('<div class="sidebar-brand">Gestão de estoque</div>')
- _current=_current_inventory_page()
- for _nav_index,_nav_page in enumerate(_visible_inventory_pages()):
-  if _nav_page=='Configurações':
-   st.html('<div class="sidebar-section-label admin">Administração</div>')
-  st.button(
-   setta_shell.route_title(_nav_page),
-   key=f'setta_nav_{_nav_index}',
-   type='primary' if _nav_page==_current else 'secondary',
-   use_container_width=True,
-   on_click=_set_inventory_page,
-   args=(_nav_page,),
-  )
+ with st.container(key='setta_route_list', gap=None):
+  st.html('<div class="sidebar-brand">Gestão de estoque</div>')
+  _current=_current_inventory_page()
+  for _nav_index,_nav_page in enumerate(_visible_inventory_pages()):
+   if _nav_page=='Configurações':
+    st.html('<div class="sidebar-section-label admin">Administração</div>')
+   st.button(
+    setta_shell.route_title(_nav_page),
+    key=f'setta_nav_{_nav_index}',
+    icon=setta_shell.route_icon(_nav_page),
+    type='primary' if _nav_page==_current else 'secondary',
+    width='stretch',
+    on_click=_set_inventory_page,
+    args=(_nav_page,),
+   )
 
  _sidebar_status_slot=st.empty()
  _sidebar_status_slot.markdown(
