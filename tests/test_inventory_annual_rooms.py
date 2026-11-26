@@ -101,7 +101,7 @@ class AnnualRoomsTests(unittest.TestCase):
         self.assertEqual(result["queue"], [])
         self.assertEqual(result["pilot"].totals()[0][-1], -10)
         self.assertEqual([line["Quantidade"] for line in result["evidence"][r._key(AUDIT,"A-01","SIM-001")]], [5,4])
-        self.assertEqual(set(self.view(self.a)), {"role", "closed", "tasks", "drafts", "display", "title", "room_id"})
+        self.assertEqual(set(self.view(self.a)), {"role", "closed", "tasks", "drafts", "display", "title", "room_id", "free"})
 
     def configured(self, people):
         ids = r.team_ids(people)
@@ -167,3 +167,73 @@ class AnnualRoomsTests(unittest.TestCase):
         for event in ("edit", "remove", "submit"):
             with self.assertRaises(ValueError):
                 self.act(self.a, event, FIRST, "A-01", item=updated, expected=line, line_id=line["id"])
+
+    def free_room(self, people=3, mode=r.PAIRS):
+        names = "\n".join(f"Pessoa {i}" for i in range(1, people + 1))
+        key = r.create_room({}, True, people=people, mode=mode, participants=names, path=self.path)
+        info = self.view(key)
+        return key, list(r.worker_codes(key, info["pilot"].teams).values())
+
+    def test_free_formation_individual_odd_and_more_than_eight(self):
+        nine = "\n".join(f"Pessoa {i}" for i in range(9))
+        pair = list(r.formation(9, r.PAIRS, nine, "Teste")["teams"].values())
+        self.assertEqual(len(pair), 5)
+        self.assertEqual(pair[0], {"name":"Pessoa 0 / Pessoa 1","lead":"Pessoa 0","assistant":"Pessoa 1"})
+        self.assertEqual(pair[-1], {"name":"Pessoa 8","lead":"Pessoa 8","assistant":""})
+        individual = list(r.formation(9, r.INDIVIDUAL, nine, "Teste")["teams"].values())
+        self.assertEqual(len(individual), 9)
+        self.assertTrue(all(not team["assistant"] for team in individual))
+        with self.assertRaises(ValueError):
+            r.formation(2, r.PAIRS, "Pessoa A", "Teste")
+
+    def test_free_address_duplicate_runs_separately_and_never_enters_total(self):
+        key, (a,b,_) = self.free_room()
+        self.assertEqual(self.view(key)["pilot"].assignment, {})
+        with self.assertRaisesRegex(ValueError,"não é apto"):
+            self.act(a, "open", address=" X - 01 ")
+        self.assertEqual(self.act(a, "open", address="  a – 01 "), (FIRST, "A-01"))
+        with self.assertRaises(r.AddressConflict) as conflict:
+            self.act(b, "open", address="A-01")
+        self.assertEqual(conflict.exception.name, "Pessoa 1 / Pessoa 2")
+        self.assertFalse(conflict.exception.submitted)
+        self.qr(a,FIRST,"A-01","","00000001,L1,10")
+        self.qr(a,FIRST,"A-01","","00000002,L2,5")
+        self.act(a,"submit",FIRST,"A-01",complete=True)
+        with self.assertRaises(r.AddressConflict) as counted:
+            self.act(b,"open",address=" a-01")
+        self.assertTrue(counted.exception.submitted)
+        owner = counted.exception.owner
+        self.assertEqual(self.act(b,"open",address="A-01",confirm_owner=owner),(r.EXTRA,"A-01"))
+        self.qr(b,r.EXTRA,"A-01","","00000001,L1,99")
+        self.act(b,"submit",r.EXTRA,"A-01",complete=True)
+        with self.assertRaises(ValueError):
+            self.act(b,"open",address="A-01",confirm_owner=owner)
+        for address, code, amount in (("A-02","00000001",3),("B-01","00000003",4),("B-02","",0)):
+            self.act(b,"open",address=address)
+            if code:
+                self.qr(b,FIRST,address,"",f"{code},L1,{amount}")
+            self.act(b,"submit",FIRST,address,complete=True,empty=not code)
+        self.act(key,"close")
+        result = self.view(key)
+        self.assertEqual(result["pilot"].totals()[0][2:8], (13,2,15,15,0,0))
+        self.assertEqual(result["extras"][0][3][0]["Quantidade"],99)
+        self.assertTrue(all(not k.startswith(r.EXTRA) for k in result["evidence"]))
+
+    def test_simultaneous_address_claim_creates_exactly_one_official_count(self):
+        key,(a,b,_) = self.free_room()
+        def claim(team_text):
+            team, address = team_text
+            try:
+                return self.act(team,"open",address=address)
+            except r.AddressConflict as exc:
+                return exc
+        with ThreadPoolExecutor(2) as executor:
+            results = list(executor.map(claim, [(a,"Livre – 02"),(b,"  LIVRE-02 ")]))
+        self.assertEqual(sum(isinstance(o, r.AddressConflict) for o in results),1)
+        self.assertIn((FIRST,"LIVRE-02"),results)
+        self.assertEqual(list(self.view(key)["pilot"].assignment),["LIVRE-02"])
+        winner = b if isinstance(results[0],r.AddressConflict) else a
+        self.qr(winner,FIRST,"LIVRE-02","","00000001,000101,1")
+        self.act(winner,"submit",FIRST,"LIVRE-02",complete=True)
+        receiver = a if winner == b else b
+        self.assertEqual(self.view(receiver)["tasks"][SECOND],[("LIVRE-02","SIM-001")])

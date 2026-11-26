@@ -50,13 +50,18 @@ class AnnualPilot:
     started_at: datetime | None = None
     positions: dict = field(default_factory=dict)
     closed_at: datetime | None = None
+    roster: tuple = ()
+    free: bool = False
 
-    def start(self, assignment, locked, *, teams=TEAMS):
-        if self.started_at or not locked or set(assignment) != set(ELIGIBLE) or set(assignment.values()) != set(teams) or not teams:
+    def start(self, assignment, locked, *, teams=TEAMS, free=False):
+        valid = not assignment if free else set(assignment) == set(ELIGIBLE) and set(assignment.values()) == set(teams)
+        if self.started_at or not locked or not valid or not teams:
             raise ValueError("Confirme o bloqueio simulado e distribua todos os endereços entre as duplas.")
         # Uma foto defensiva é copiada para a sessão; mudanças futuras às
         # constantes ou à interface não alteram o corte de uma sessão aberta.
         self.assignment = dict(assignment)
+        self.roster = tuple(teams) if free else ()
+        self.free = free
         self._snapshot = {a: {k: qty(v) for k, v in rows.items()} for a, rows in SNAPSHOT.items()}
         self._total = {k: qty(v) for k, v in SYSTEM_TOTAL.items()}
         self._catalog = dict(CATALOG)
@@ -77,7 +82,7 @@ class AnnualPilot:
         observed = {k: qty(v) for k, v in counts.items()}
         if any(v == 0 for v in observed.values()):
             raise ValueError("Registre só os produtos encontrados, com quantidade positiva.")
-        expected = self._snapshot[address]
+        expected = self._snapshot.get(address, {})
         rows = {}
         for code in sorted(expected.keys() | observed.keys()):
             system, first = expected.get(code, Decimal(0)), observed.get(code, Decimal(0))
@@ -89,7 +94,7 @@ class AnnualPilot:
 
     @property
     def teams(self):
-        return tuple(sorted(set(self.assignment.values())))
+        return self.roster or tuple(sorted(set(self.assignment.values())))
 
     def recount_owner(self, address):
         first_team = self.assignment[address]
@@ -141,7 +146,7 @@ class AnnualPilot:
         return VALIDATED
 
     def ready(self):
-        return bool(self.started_at and all(self.address_status(a) == VALIDATED for a in ELIGIBLE))
+        return bool(self.started_at and all(self.address_status(a) == VALIDATED for a in set(ELIGIBLE) | self.assignment.keys()))
 
     def close(self):
         self._require_open()

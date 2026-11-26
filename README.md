@@ -197,19 +197,25 @@ O teste em `tests/sql/inventory_document_guard.sql` usa lotes artificiais e deve
 
 A aba usa exclusivamente dados fictícios. Entre com perfil **Gestor** do
 Inventário (se o login não foi solicitado automaticamente, use Configurações).
-Em **Criar piloto**, escolha quantas pessoas contarão, de 2 a 8 nesta amostra
-de quatro endereços. Cadastre o nome de cada dupla, o cabeça de chave e o
-auxiliar com nomes fictícios, distribua os endereços aptos e confirme o
-bloqueio simulado do S2. Só o Gestor vê a preparação e os códigos das equipes.
-Se houver apenas uma dupla, uma pessoa independente faz a segunda contagem
-com um código próprio, separado do acesso da Auditoria.
+Em **Criar piloto**, informe o total de participantes e escolha contagem
+individual ou em duplas. Digite um participante fictício por linha. Em duplas,
+o primeiro de cada par é o cabeça de chave e o segundo é o auxiliar; se o
+total for ímpar, a última pessoa conta sozinha. Os nomes da equipe são os dos
+integrantes. Só o Gestor vê a preparação e os códigos das equipes.
+Se houver apenas uma equipe, uma pessoa independente faz a segunda contagem
+com acesso próprio, separado da Auditoria.
 
 A Coordenação fornece o código da equipe. Em outro aparelho, acesse
 **Inventário anual → Acessar piloto**, entre com o código e abra o inventário
 pelo nome da equipe em **Meus inventários**. Cada código libera a contagem
 atribuída e, quando aplicável, uma aba **Recontagem** independente e cega.
 
-Para a 1ª contagem, abra um endereço, leia as etiquetas e confira o rascunho.
+Para a 1ª contagem, digite o endereço do S2 e abra a tarefa, sem atribuição
+prévia. O piloto exclui os endereços explicitamente não aptos. Se outra equipe
+já abriu ou enviou o mesmo endereço, o aplicativo identifica a equipe e
+pede confirmação antes de permitir uma conferência extra. Essa conferência
+é registrada separadamente e nunca entra no total oficial. Leia as etiquetas
+e confira o rascunho.
 **Sair do endereço sem enviar** preserva as leituras e permite abrir e editar
 quantas vezes for necessário. **Enviar para conferência** exige confirmação,
 trava o endereço e compara a contagem com o saldo de corte. Só divergências
