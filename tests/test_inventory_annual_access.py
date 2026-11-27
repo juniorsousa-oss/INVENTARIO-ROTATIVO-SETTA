@@ -67,6 +67,45 @@ class AnnualAccessTests(unittest.TestCase):
             r.action(self.guest, 'add', FIRST, 'A-01', item=item, path=self.path)
 
 
+    def test_annual_auth_controls_only_on_home_and_logout_returns_to_guest(self):
+        entry = """
+import streamlit as st
+from inventory_annual_ui import render, STATE
+manager = st.session_state.get("signed_in", False)
+def logout():
+    st.session_state["signed_in"] = False
+    st.session_state.pop(STATE, None)
+    st.rerun()
+render(st, manager=manager, sign_in=None if manager else lambda: st.text_input("Usuário"),
+       sign_out=logout if manager else None)
+"""
+        r.action(self.gestor, "publish", path=self.path)
+        with patch.object(r, "list_rooms", partial(r.list_rooms, path=self.path)), \
+             patch.object(r, "view", partial(r.view, path=self.path)):
+            def click(app, label):
+                [button] = [b for b in app.button if b.label == label]
+                app = button.click().run()
+                self.assertFalse(app.exception)
+                return app
+
+            guest = AppTest.from_string(entry).run()
+            self.assertTrue(any(x.label == "Entrar como gestor" for x in guest.expander))
+            guest = click(guest, "Equipe A")
+            self.assertFalse(any(x.label == "Entrar como gestor" for x in guest.expander))
+            self.assertTrue(any(x.label == "Entrar como gestor"
+                                for x in click(guest, "Voltar aos inventários").expander))
+
+            manager = AppTest.from_string(entry)
+            manager.session_state["signed_in"] = True
+            manager.run()
+            manager = click(manager, "Acompanhar inventário")
+            self.assertNotIn("Sair do modo gestor", [x.label for x in manager.button])
+            manager = click(manager, "Voltar aos inventários")
+            guest = click(manager, "Sair do modo gestor")
+            self.assertTrue(any(x.label == "Entrar como gestor" for x in guest.expander))
+            self.assertNotIn("Acompanhar inventário", [x.label for x in guest.button])
+            self.assertIn("Equipe A", [x.label for x in guest.button])
+
     def test_ui_access_does_not_prompt_for_team_code(self):
         def click(app, label):
             [button] = [b for b in app.button if b.label == label]
