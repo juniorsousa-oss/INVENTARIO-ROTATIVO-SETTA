@@ -101,7 +101,7 @@ class AnnualRoomsTests(unittest.TestCase):
         self.assertEqual(result["queue"], [])
         self.assertEqual(result["pilot"].totals()[0][-1], -10)
         self.assertEqual([line["Quantidade"] for line in result["evidence"][r._key(AUDIT,"A-01","SIM-001")]], [5,4])
-        self.assertEqual(set(self.view(self.a)), {"role", "closed", "tasks", "drafts", "display", "title", "room_id", "free", "address_options"})
+        self.assertEqual(set(self.view(self.a)), {"role", "closed", "tasks", "drafts", "display", "title", "room_id", "free", "address_options", "catalog"})
 
     def configured(self, people):
         ids = r.team_ids(people)

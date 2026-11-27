@@ -195,20 +195,25 @@ O teste em `tests/sql/inventory_document_guard.sql` usa lotes artificiais e deve
 
 ## Inventário Anual · Piloto
 
-A aba usa exclusivamente dados fictícios. Entre com perfil **Gestor** do
-Inventário (se o login não foi solicitado automaticamente, use Configurações).
-Em **Criar piloto**, informe o total de participantes e escolha contagem
-individual ou em duplas. Digite um participante fictício por linha. Em duplas,
-o primeiro de cada par é o cabeça de chave e o segundo é o auxiliar; se o
-total for ímpar, a última pessoa conta sozinha. Os nomes da equipe são os dos
-integrantes. Só o Gestor vê a preparação e os códigos das equipes.
-Se houver apenas uma equipe, uma pessoa independente faz a segunda contagem
-com acesso próprio, separado da Auditoria.
+O piloto publicado usa exclusivamente dados fictícios. A planilha real usada
+em validação privada não é carregada no app nem enviada ao repositório.
+Com perfil **Gestor** autenticado, use **Criar piloto** e **Acompanhar**.
+Se precisar fazer login, abra **Entrar como gestor** ou use Configurações.
+A política global de obrigatoriedade de login continua valendo.
 
-A Coordenação fornece o código da equipe. Em outro aparelho, acesse
-**Inventário anual → Acessar piloto**, entre com o código e abra o inventário
-pelo nome da equipe em **Meus inventários**. Cada código libera a contagem
-atribuída e, quando aplicável, uma aba **Recontagem** independente e cega.
+Informe o total de participantes e escolha contagem individual ou em duplas.
+Digite um nome fictício por linha. Em duplas, o primeiro de cada par é o
+cabeça de chave; se o total for ímpar, a última pessoa conta sozinha.
+
+Na gestão, **Liberar na visão padrão** torna o piloto acessível para quem
+abrir o app sem login quando a política global permite. Nessa visão, basta
+selecionar a equipe pelo nome, sem digitar código. Use aliases, porque
+qualquer pessoa com acesso à visão padrão pode selecionar uma equipe
+liberada. Se houver uma única equipe, o papel de conferência independente
+aparece separado. Auditoria e encerramento ficam somente na gestão.
+**Retirar da visão padrão** cancela o acesso sem excluir rascunhos.
+Pilotos existentes não são divulgados automaticamente; os compatíveis
+podem ser liberados pela gestão.
 
 Para a 1ª contagem, digite parte do endereço no campo de busca, escolha
 uma sugestão e abra a tarefa, sem atribuição prévia. O catálogo do piloto vem

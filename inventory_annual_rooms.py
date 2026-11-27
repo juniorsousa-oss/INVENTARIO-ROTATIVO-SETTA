@@ -50,11 +50,13 @@ def normalize_address(value):
     return text
 
 
-def reading(product, address, lot, amount, label_id=""):
+def reading(product, address, lot, amount, label_id="", *, catalog=None):
     product, address, lot, label_id = (v.strip().upper() for v in (product, address, lot, label_id))
-    product = DEMO_PRODUCTS.get(product, product)
-    if product not in CATALOG:
-        raise ValueError("Produto não encontrado no catálogo fictício.")
+    catalog = CATALOG if catalog is None else catalog
+    if product not in catalog:
+        product = DEMO_PRODUCTS.get(product, product)
+    if product not in catalog:
+        raise ValueError("Produto não encontrado no catálogo do piloto.")
     address = normalize_address(address)
     if not FIELD.fullmatch(lot) or (label_id and not FIELD.fullmatch(label_id)):
         raise ValueError("Informe um lote válido. Use apenas letras, números, ponto, hífen ou sublinhado.")
@@ -76,9 +78,9 @@ def parse_qr_fields(payload):
     return tuple(parts)
 
 
-def parse_demo_label(payload, address):
+def parse_demo_label(payload, address, *, catalog=None):
     product, lot, quantity = parse_qr_fields(payload)
-    return reading(product, address, lot, quantity)
+    return reading(product, address, lot, quantity, catalog=catalog)
 
 
 def _sha(token):
@@ -220,7 +222,58 @@ def create_room(assignment, locked, *, teams=None, people=None, title=TITLE, mod
     return token
 
 
+@dataclass(frozen=True)
+class RoomAccess:
+    """Internal selector, constructed by the server, never supplied by the client."""
+    room_id: str
+    role: str
+    manager: bool = False
+
+
+def list_rooms(*, manager=False, path=PATH):
+    with _connect(path) as conn:
+        rows = conn.execute("SELECT id,state FROM annual_rooms WHERE expires>? ORDER BY rowid DESC",
+                            (int(time.time()),)).fetchall()
+    listings = []
+    for room_id, raw in rows:
+        state = json.loads(raw)
+        info = state.get("info") or {}
+        visible = bool(info.get("visible_to_guests")) and bool(state.get("free"))
+        if not manager and (not visible or state["closed"]):
+            continue
+        roles = state.get("roster") or ()
+        teams = info.get("teams") or {}
+        listings.append({"id": room_id, "title": info.get("title", TITLE),
+                         "closed": bool(state["closed"]), "visible": visible,
+                         "can_publish": bool(state.get("free")),
+                         "teams": [(role, teams.get(role, {}).get("name", role))
+                                   for role in worker_roles(roles) if role != AUDITOR] if roles else []})
+    return listings
+
+
+def _authorized_selection(conn, access):
+    row = conn.execute("SELECT state FROM annual_rooms WHERE id=? AND expires>?",
+                       (access.room_id, int(time.time()))).fetchone()
+    if not row:
+        raise ValueError("Este inventário não está mais disponível.")
+    state = json.loads(row[0])
+    if access.manager:
+        if access.role not in (COORD, AUDITOR):
+            raise ValueError("Selecione Gestão ou Auditoria.")
+    else:
+        info = state.get("info") or {}
+        allowed = tuple(state.get("roster") or ())
+        if len(allowed) == 1:
+            allowed += (INDEPENDENT,)
+        if (not state.get("free") or state["closed"] or not info.get("visible_to_guests")
+                or access.role not in allowed):
+            raise ValueError("Este inventário ou esta equipe não está mais disponível.")
+    return access.room_id, access.role, state
+
+
 def _authorized(conn, token):
+    if isinstance(token, RoomAccess):
+        return _authorized_selection(conn, token)
     if not isinstance(token, str) or not TOKEN.fullmatch(token):
         raise ValueError("Código de acesso inválido ou expirado.")
     item = conn.execute("""SELECT a.room_id, a.role, r.state
@@ -284,7 +337,7 @@ def view(token, *, path=PATH):
     teams = info.get("teams") or {idx: {"name": idx, "lead": "", "assistant": ""} for idx in p.teams}
     display = teams.get(role, {}).get("name", role)
     common = {"role": role, "closed": bool(p.closed_at), "display": display, "title": info.get("title", TITLE),
-              "room_id": room_id, "free": p.free}
+              "room_id": room_id, "free": p.free, "catalog": {k: v[0] for k, v in p._catalog.items()}}
     extras = state.get("extras") or {}
     if role == COORD:
         queue = []
@@ -306,6 +359,7 @@ def view(token, *, path=PATH):
                 extra_report.append((address, team, status, grouped(rows)))
         final = {key: lines for key, lines in state["evidence"].items() if not key.startswith(EXTRA + "|")}
         return {**common, "pilot": p, "teams": teams, "queue": queue, "extras": extra_report,
+                "visible": bool(info.get("visible_to_guests")),
                 "evidence": _draft_details(final) if p.closed_at else {}}
     tasks = {}
     if not p.closed_at:
@@ -362,6 +416,11 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
             else:
                 name = (state.get("info", {}).get("teams") or {}).get(owner, {}).get("name", owner)
                 raise AddressConflict(owner, name, address in p.positions)
+        elif event in ("publish", "hide") and role == COORD and isinstance(token, RoomAccess) and token.manager:
+            p._require_open()
+            if not p.free:
+                raise ValueError("Somente pilotos com equipes podem ser mostrados na visão padrão.")
+            state.setdefault("info", {})["visible_to_guests"] = event == "publish"
         elif event == "close" and role == COORD:
             p.close()
         else:
@@ -371,6 +430,8 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
             if event == "add":
                 if not isinstance(item, Reading) or item.address != address or (product and item.product != product):
                     raise ValueError("A etiqueta não pertence ao endereço ou ao produto desta tarefa.")
+                if item.product not in p._catalog:
+                    raise ValueError("Produto não encontrado no catálogo do piloto.")
                 if len(lines) >= MAX_READINGS:
                     raise ValueError("Limite de lançamentos no endereço do piloto.")
                 if item.label_id and any(r["label_id"] == item.label_id for r in lines):
@@ -390,6 +451,8 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
             elif event == "edit":
                 if not isinstance(item, Reading) or item.address != address or (product and item.product != product):
                     raise ValueError("Mantenha o endereço e o produto da tarefa de recontagem.")
+                if item.product not in p._catalog:
+                    raise ValueError("Produto não encontrado no catálogo do piloto.")
                 index = next((i for i, row in enumerate(lines) if row["id"] == line_id), None)
                 if index is None or lines[index] != expected:
                     raise ValueError("O rascunho mudou em outro aparelho. Atualize e confira antes de editar.")
