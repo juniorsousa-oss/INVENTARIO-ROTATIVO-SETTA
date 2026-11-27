@@ -9,6 +9,7 @@ export default function ({parentElement, setTriggerValue}) {
     const context = canvas.getContext("2d", {willReadFrequently: true});
     const host = parentElement.host || parentElement;
     let stream = null, timer = null, generation = 0;
+    let startedAt = 0, frames = 0, incompatible = false;
     video.muted = true;
 
     function stop() {
@@ -23,20 +24,24 @@ export default function ({parentElement, setTriggerValue}) {
         resume.hidden = true;
         open.hidden = false;
     }
-    function decode(source, width, height, maxSize) {
-        const scale = Math.min(1, maxSize / Math.max(width, height));
-        canvas.width = Math.round(width * scale);
-        canvas.height = Math.round(height * scale);
-        context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    function decode(source, width, height, maxSize, crop = false) {
+        const w = crop ? Math.floor(width * .62) : width;
+        const h = crop ? Math.floor(height * .62) : height;
+        const scale = Math.min(1, maxSize / Math.max(w, h));
+        canvas.width = Math.round(w * scale);
+        canvas.height = Math.round(h * scale);
+        if (crop) context.drawImage(source, (width-w)/2, (height-h)/2, w, h, 0, 0, canvas.width, canvas.height);
+        else context.drawImage(source, 0, 0, canvas.width, canvas.height);
         const frame = context.getImageData(0, 0, canvas.width, canvas.height);
         return decodeQR(frame.data, frame.width, frame.height, {inversionAttempts: "attemptBoth"})?.data
-            || SettaBarcode.decodeBarcode(frame);
+            || (crop ? null : SettaBarcode.decodeBarcode(frame));
     }
     function emit(raw) {
-        const value = raw?.trim();
+        const value = typeof raw === "string" ? raw.trim() : "";
         if (!value) return false;
         if (value.length > 180 || !(value.includes(",") || /^[a-z0-9][a-z0-9_.-]{0,31}$/i.test(value))) {
-            status.textContent = "O código lido não tem o formato de uma etiqueta.";
+            incompatible = true;
+            status.textContent = "Código reconhecido, mas o formato não é aceito. Tente bipar ou lançar manualmente.";
             return false;
         }
         stop();
@@ -49,7 +54,16 @@ export default function ({parentElement, setTriggerValue}) {
         if (!host.getClientRects().length) { closeCamera(); return; }
         try {
             if (video.readyState >= 2 && video.videoWidth) {
-                if (emit(decode(video, video.videoWidth, video.videoHeight, 1440))) return;
+                const {videoWidth: w, videoHeight: h} = video;
+                if (emit(decode(video, w, h, 1440))) return;
+                // Alternate a central, full-detail QR pass to keep small labels
+                // readable without decoding the full 1080p frame on every tick.
+                if (++frames % 3 === 0 && w > 700 && h > 400 && emit(decode(video, w, h, 1440, true))) return;
+                if (!incompatible && Date.now() - startedAt > 5500) {
+                    status.textContent = "Ainda não li a etiqueta. Centralize o código, ajuste a distância e evite reflexo.";
+                }
+            } else if (Date.now() - startedAt > 5500) {
+                status.textContent = "A câmera não enviou imagem. Feche e abra a câmera ou tente uma foto.";
             }
         } catch {
             stop();
@@ -102,6 +116,12 @@ export default function ({parentElement, setTriggerValue}) {
                 return;
             }
             stream = next;
+            try {
+                const track = next.getVideoTracks?.()[0];
+                if (track?.getCapabilities?.().focusMode?.includes("continuous") && track.applyConstraints) {
+                    track.applyConstraints({advanced: [{focusMode: "continuous"}]}).catch(() => {});
+                }
+            } catch { /* Browser or device does not expose focus controls. */ }
             video.srcObject = next;
             video.hidden = false;
             await playVideo(run);
@@ -127,7 +147,10 @@ export default function ({parentElement, setTriggerValue}) {
         }
         if (run !== generation) return;
         resume.hidden = true;
-        status.textContent = "Aponte para o QR ou código de barras da etiqueta.";
+        status.textContent = "Centralize a etiqueta. A leitura é automática.";
+        startedAt = Date.now();
+        frames = 0;
+        incompatible = false;
         scan(run);
     }
     function resumeVideo() {

@@ -4,10 +4,10 @@ from pathlib import Path
 
 ASSETS = Path(__file__).with_name("assets")
 HTML = """
-<button type="button" data-open>Abrir câmera para ler etiqueta</button>
+<button type="button" data-open>Ler QR ou código de barras ao vivo</button>
 <button type="button" data-close hidden>Fechar câmera</button>
 <button type="button" data-resume hidden>Iniciar prévia da câmera</button>
-<label data-photo-label>Usar foto da etiqueta <input type="file" data-photo accept="image/*"></label>
+<label data-photo-label>Ler a partir de uma foto <input type="file" data-photo accept="image/*"></label>
 <video playsinline muted autoplay hidden aria-label="Imagem da câmera"></video>
 <div role="status" aria-live="polite"></div>
 """
