@@ -188,7 +188,7 @@ render(st, manager=manager, sign_in=None if manager else lambda: st.text_input("
             manager = click(manager, "Acompanhar inventário")
             self.assertIn("Somente gestão", [x.value for x in manager.caption])
             self.assertEqual(manager.segmented_control[0].value, "Andamento")
-            self.assertNotIn("Preparar cópia", [x.label for x in manager.button])
+            self.assertFalse(manager.get("download_button"))
             self.assertNotIn("Abrir auditoria", [x.label for x in manager.button])
             manager = click(manager, "Liberar para equipes")
             self.assertIn("Liberado para equipes", [x.value for x in manager.caption])
@@ -209,7 +209,8 @@ render(st, manager=manager, sign_in=None if manager else lambda: st.text_input("
             self.assertTrue(any("Parafuso" in f.value["Descrição"].tolist()
                                 for f in manager.dataframe if "Descrição" in f.value))
             manager = manager.segmented_control[0].set_value("Gerenciar").run()
-            self.assertIn("Preparar cópia", [x.label for x in manager.button])
+            self.assertNotIn("Preparar cópia", [x.label for x in manager.button])
+            self.assertEqual([x.proto.label for x in manager.get("download_button")], ["Baixar cópia do piloto"])
             click(manager, "Retirar da visão padrão")
             self.assertTrue(guest.run().info)
 
