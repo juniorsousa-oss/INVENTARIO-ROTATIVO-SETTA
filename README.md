@@ -201,9 +201,13 @@ Com perfil **Gestor** autenticado, use **Criar piloto** e **Acompanhar**.
 Se precisar fazer login, abra **Entrar como gestor** ou use Configurações.
 A política global de obrigatoriedade de login continua valendo.
 
-Informe o total de participantes e escolha contagem individual ou em duplas.
-Digite um nome fictício por linha. Em duplas, o primeiro de cada par é o
-cabeça de chave; se o total for ímpar, a última pessoa conta sozinha.
+Informe o total de participantes e escolha contagem individual, em duplas
+ou em equipes mistas. Em duplas, o primeiro de cada par é o principal e,
+se o total for ímpar, a última pessoa conta sozinha. Em equipes mistas,
+informe os nomes fictícios e a classe de cada participante. O app associa
+um auxiliar a cada principal, na ordem do cadastro. Principais sem auxiliar
+contam sozinhos; se faltar principal para algum auxiliar, o piloto não
+pode ser criado até corrigir a formação.
 
 Na gestão, **Liberar na visão padrão** torna o piloto acessível para quem
 abrir o app sem login quando a política global permite. Nessa visão, basta

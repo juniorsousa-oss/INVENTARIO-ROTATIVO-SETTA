@@ -22,24 +22,44 @@ def _setup(st):
     st.subheader("Preparar a contagem")
     plan = st.session_state.get(PREP) or {}
     if not plan.get("ready"):
+        modes = (room.INDIVIDUAL, room.PAIRS, room.MIXED)
+        mode = st.radio("Como será a contagem?", modes,
+                        index=modes.index(plan["mode"]) if plan.get("mode") in modes else 1, horizontal=True)
+        people = st.number_input("Quantas pessoas vão realizar a contagem?", min_value=1,
+                                 value=plan.get("people"), step=1, placeholder="Informe o total de pessoas")
         with st.form("ann_setup_free", enter_to_submit=False):
             title = st.text_input("Nome do inventário", value=plan.get("title", room.TITLE), max_chars=60)
-            mode = st.radio("Como será a contagem?", (room.INDIVIDUAL, room.PAIRS),
-                            index=0 if plan.get("mode") == room.INDIVIDUAL else 1, horizontal=True)
-            people = st.number_input("Quantas pessoas vão realizar a contagem?", min_value=1,
-                                     value=plan.get("people"), step=1, placeholder="Informe o total de pessoas")
-            participants = st.text_area("Participantes fictícios, um por linha", value=plan.get("participants", ""),
-                        help="Em duplas, informe o cabeça de chave e depois o auxiliar de cada dupla. "
-                             "Se sobrar uma pessoa, ela conta individualmente.")
+            saved = plan.get("participants")
+            if mode == room.MIXED:
+                if people:
+                    rows = saved if isinstance(saved, list) else []
+                    participants = st.data_editor(
+                        (rows[:people] + [{"Participante": "", "Classe": room.PRINCIPAL}
+                                          for _ in range(max(people - len(rows), 0))]),
+                        column_config={
+                            "Participante": st.column_config.TextColumn("Participante (nome fictício)", required=True, max_chars=60),
+                            "Classe": st.column_config.SelectboxColumn(
+                                "Classe", options=[room.PRINCIPAL, room.ASSISTANT],
+                                required=True, default=room.PRINCIPAL),
+                        },
+                        width="stretch", hide_index=True, num_rows="fixed",
+                        key=f'ann_mixed_{people}_{plan.get("revision", 0)}',
+                    )
+                else:
+                    participants = []
+            else:
+                participants = st.text_area("Participantes fictícios, um por linha", value=saved if isinstance(saved, str) else "",
+                            help="Em duplas, informe o principal e depois o auxiliar. A última pessoa pode contar sozinha.")
             if st.form_submit_button("Conferir formação", type="primary"):
                 def confirm_teams():
                     valid = room.formation(people, mode, participants, title)
-                    st.session_state[PREP] = {**valid, "people": people, "participants": participants, "ready": True}
+                    st.session_state[PREP] = {**valid, "people": people, "participants": participants,
+                                             "ready": True, "revision": plan.get("revision", 0) + 1}
                 _apply(st, confirm_teams)
         return
     st.subheader("Equipes formadas")
     st.caption(f'{plan["people"]} pessoa(s) · {len(plan["teams"])} equipe(s) · {plan["mode"]}')
-    st.dataframe([{"Equipe": d["name"], "Responsável": d["lead"],
+    st.dataframe([{"Equipe": d["name"], "Principal": d["lead"],
                    "Auxiliar": d["assistant"] or "—"} for d in plan["teams"].values()], hide_index=True)
     if st.button("Editar formação das equipes"):
         st.session_state[PREP] = {**plan, "ready": False}
@@ -63,7 +83,7 @@ def _coordinator(st, token, current):
     covered = set(pilot.eligible_addresses()) | pilot.assignment.keys()
     st.progress(sum(pilot.address_status(a) == VALIDATED for a in covered) / len(covered))
     with st.expander("Equipes e endereços"):
-        st.dataframe([{"Equipe": data["name"], "Cabeça de chave": data["lead"], "Auxiliar": data["assistant"],
+        st.dataframe([{"Equipe": data["name"], "Principal": data["lead"], "Auxiliar": data["assistant"],
                        "Endereços": ", ".join(a for a, owner in sorted(pilot.assignment.items()) if owner == idx) or "—"}
                       for idx, data in current["teams"].items()], hide_index=True)
     if pilot.free and not pilot.closed_at:
