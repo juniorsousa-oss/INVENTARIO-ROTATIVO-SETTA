@@ -436,22 +436,15 @@ def _free_count(st, token, current):
             st.rerun()
         return
     options = current["address_options"]
-    address = st.text_input("Código do endereço", max_chars=60,
-                            placeholder="Digite ou bipe o endereço", key="ann_search_code_" + current["room_id"])
-    if st.button("Abrir endereço", type="primary"):
-        open_at(address)
-    if options and address.strip():
-        try:
-            entered = room.canonical_address(address)
-        except ValueError:
-            entered = ""
-        if entered and entered not in options:
-            matches = [a for a in options if entered in a][:8]
-            if matches:
-                st.caption("Endereços sugeridos")
-                for option in matches:
-                    if st.button(option, key=f'ann_suggest_{current["room_id"]}_{option}'):
-                        open_at(option)
+    if options:
+        address = st.selectbox("Bipe ou digite o endereço", options, index=None,
+                               placeholder="Busque um endereço cadastrado",
+                               accept_new_options=False, filter_mode="contains",
+                               key="ann_address_filter_" + current["room_id"])
+        if st.button("Abrir endereço", type="primary", disabled=address not in options):
+            open_at(address)
+    else:
+        st.info("Nenhum endereço cadastrado está apto para contagem.")
     saved = [(stage, a) for stage in (FIRST, room.EXTRA) for a, _ in current["tasks"].get(stage, [])]
     if saved:
         with st.expander(f"Retomar rascunho ({len(saved)})"):
