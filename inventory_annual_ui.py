@@ -92,7 +92,7 @@ def _setup(st):
         st.rerun()
     if st.button("Iniciar piloto", type="primary"):
         def start():
-            # Congela apenas a base fictícia da sala; não bloqueia o S2 real.
+            # Congela apenas a base fictícia da sala; não bloqueia o estoque real.
             token = room.create_room({}, True, people=plan["people"], title=plan["title"],
                 mode=plan["mode"], participants=plan["participants"], assignments=plan.get("assignments"))
             st.session_state[STATE] = room.RoomAccess(room.view(token)["room_id"], room.COORD, True)
@@ -146,8 +146,8 @@ def _coordinator(st, token, current):
     st.success("Piloto encerrado.")
     st.subheader("Fechamento por produto")
     frame = [{"Código": code, "Produto": desc, "Contado (aptos)": float(counted),
-              "Saldo não apto": float(excl), "Total apurado S2": float(final),
-              "Saldo de corte S2": float(system), "Dif. quantidade": float(delta),
+              "Saldo não apto": float(excl), "Total apurado": float(final),
+              "Saldo de estoque no corte": float(system), "Dif. quantidade": float(delta),
               "Dif. valor (R$)": float(value)}
              for code, desc, counted, excl, final, system, delta, value in pilot.totals()]
     short = -sum(r[-1] for r in pilot.totals() if r[-1] < 0)
@@ -329,14 +329,14 @@ def _free_count(st, token, current):
 
     options = current["address_options"]
     if options:
-        address = st.selectbox("Buscar endereço do S2", options, index=None, filter_mode="contains",
+        address = st.selectbox("Buscar endereço de estoque", options, index=None, filter_mode="contains",
                                placeholder="Digite parte do endereço", accept_new_options=False,
                                key="ann_search_" + current["room_id"])
         if st.button("Abrir endereço", type="primary", disabled=address is None):
             open_at(address)
     else:
         with st.form("ann_enter_address", clear_on_submit=True):
-            address = st.text_input("Informe o endereço do S2", max_chars=60)
+            address = st.text_input("Informe o endereço de estoque", max_chars=60)
             if st.form_submit_button("Abrir endereço", type="primary"):
                 open_at(address)
     conflict = st.session_state.get("_annual_address_conflict")
@@ -448,7 +448,7 @@ def _inventory_list(st, manager):
 
 
 def render(st, *, manager=False):
-    st.caption("Piloto S2 · Dados fictícios")
+    st.caption("Piloto · Dados fictícios")
     token = st.session_state.get(STATE)
     if isinstance(token, room.RoomAccess) and token.manager == manager:
         try:

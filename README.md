@@ -131,7 +131,7 @@ são deixados em quarentena até que a vinculação seja validada.
 
 Contagens históricas fora do escopo deixam de compor os indicadores, as
 conferências operacionais e novas cargas de ajuste, mas continuam íntegras
-em **Registros → Histórico → Contagens fora do escopo S2 / Auditoria**.
+em **Registros → Histórico → Contagens fora do escopo do inventário / Auditoria**.
 Itens sem vínculo seguro são sinalizados para conferência. Nenhum lançamento
 que já conste como REALIZADO no Protheus é revertido automaticamente.
 Inventários antigos podem ser concluídos apenas com suas posições elegíveis

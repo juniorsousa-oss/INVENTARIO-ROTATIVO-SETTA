@@ -302,7 +302,7 @@ def inventory_scope_catalog() -> dict:
     """Catálogo comum com o Fechamento Mensal (somente metadados de escopo)."""
     data = api_call("inventory_scope_catalog", timeout=35).get("data") or {}
     if int(data.get("version") or 0) < 2:
-        raise RuntimeError("API de escopo S2 desatualizada.")
+        raise RuntimeError("API de validação do estoque desatualizada.")
     if not isinstance(data.get("excluded_codes"), list):
         raise RuntimeError("Catálogo de chapas e barras indisponível.")
     return data

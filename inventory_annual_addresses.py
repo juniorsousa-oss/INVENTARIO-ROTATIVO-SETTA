@@ -16,7 +16,7 @@ def canonical_address(value):
     text = re.sub(r"[‐‑‒–—−]", "-", text)
     text = re.sub(r"\s*([-./])\s*", r"\1", " ".join(text.split()))
     if not re.fullmatch(r"[^\W_][\w ./()-]{0,59}", text):
-        raise ValueError("Informe um endereço válido do S2.")
+        raise ValueError("Informe um endereço de estoque válido.")
     return text
 
 
@@ -59,7 +59,7 @@ def address_book_from_report(report, *, analytic=None, excluded=()):
         warehouse = next(iter(values)) if len(values) == 1 else UNKNOWN_WAREHOUSE
         book[address] = (warehouse, warehouse == "S2" and address not in blocked)
     if not any(eligible for _, eligible in book.values()):
-        raise ValueError("O relatório ENDEREÇO não confirmou nenhum endereço apto do S2.")
+        raise ValueError("O relatório ENDEREÇO não confirmou nenhum endereço apto para contagem no estoque.")
     return book
 
 
