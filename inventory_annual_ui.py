@@ -20,7 +20,6 @@ def _apply(st, fn, *args, **kwargs):
 
 def _setup(st):
     st.subheader("Preparar a contagem")
-    st.caption("Use nomes fictícios. O saldo simulado do S2 é congelado ao iniciar.")
     plan = st.session_state.get(PREP) or {}
     if not plan.get("ready"):
         with st.form("ann_setup_free", enter_to_submit=False):
@@ -29,7 +28,7 @@ def _setup(st):
                             index=0 if plan.get("mode") == room.INDIVIDUAL else 1, horizontal=True)
             people = st.number_input("Quantas pessoas vão realizar a contagem?", min_value=1,
                                      value=plan.get("people"), step=1, placeholder="Informe o total de pessoas")
-            participants = st.text_area("Participantes, um por linha", value=plan.get("participants", ""),
+            participants = st.text_area("Participantes fictícios, um por linha", value=plan.get("participants", ""),
                         help="Em duplas, informe o cabeça de chave e depois o auxiliar de cada dupla. "
                              "Se sobrar uma pessoa, ela conta individualmente.")
             if st.form_submit_button("Conferir formação", type="primary"):
@@ -42,7 +41,6 @@ def _setup(st):
     st.caption(f'{plan["people"]} pessoa(s) · {len(plan["teams"])} equipe(s) · {plan["mode"]}')
     st.dataframe([{"Equipe": d["name"], "Responsável": d["lead"],
                    "Auxiliar": d["assistant"] or "—"} for d in plan["teams"].values()], hide_index=True)
-    st.caption("Sem endereços pré-atribuídos. Cada equipe informa um endereço apto do S2; o piloto confere o cadastro antes de abrir.")
     if st.button("Editar formação das equipes"):
         st.session_state[PREP] = {**plan, "ready": False}
         st.rerun()
@@ -70,12 +68,10 @@ def _coordinator(st, token, current):
                       for idx, data in current["teams"].items()], hide_index=True)
     if pilot.free and not pilot.closed_at:
         if current["visible"]:
-            st.caption("Visível sem login para quem puder acessar o app.")
             if st.button("Retirar da visão padrão"):
                 _apply(st, room.action, token, "hide")
         else:
-            st.caption("Só a gestão vê este piloto até a liberação. Use nomes fictícios de equipes e nunca inclua dados internos aqui.")
-            if st.button("Liberar na visão padrão"):
+            if st.button("Liberar na visão padrão", help="Disponível sem login. Use nomes fictícios e não publique dados internos."):
                 _apply(st, room.action, token, "publish")
     if not pilot.closed_at and st.button("Abrir auditoria"):
         _select(st, room.RoomAccess(current["room_id"], room.AUDITOR, True))
@@ -93,16 +89,16 @@ def _coordinator(st, token, current):
                            "Situação": "Enviada" if status == "submitted" else "Em contagem"}
                            for a, t, status, _ in current["extras"]], hide_index=True)
             details = [{"Endereço": a, "Equipe": current["teams"][t]["name"],
-                        **dict(row, Descrição=catalog.get(row["Produto"], ""), Quantidade=float(row["Quantidade"]))}
+                        **dict(row, Descrição=current["catalog"].get(row["Produto"], ""), Quantidade=float(row["Quantidade"]))}
                        for a, t, status, rows in current["extras"] if status == "submitted" for row in rows]
             if details:
                 st.dataframe(details, hide_index=True)
     if not pilot.closed_at:
-        st.caption("O fechamento só é liberado após a entrega de todos os endereços e a conclusão das divergências.")
-        if st.button("Fechar piloto e apurar", type="primary", disabled=not pilot.ready()):
+        if st.button("Fechar piloto e apurar", type="primary", disabled=not pilot.ready(),
+                     help="Conclua os endereços e as divergências pendentes para fechar."):
             _apply(st, room.action, token, "close")
         return
-    st.success("Piloto fechado. Nenhum ajuste foi enviado ao estoque ou ao Protheus.")
+    st.success("Piloto encerrado.")
     st.subheader("Fechamento por produto")
     frame = [{"Código": code, "Produto": desc, "Contado (aptos)": float(counted),
               "Saldo não apto": float(excl), "Total apurado S2": float(final),
@@ -137,8 +133,7 @@ def _coordinator(st, token, current):
             st.dataframe(lot_rows, hide_index=True)
         else:
             st.caption("Nenhuma diferença registrada nos lotes rastreados.")
-        st.caption("O ajuste em valor continua por produto. Uma troca de lotes com totais iguais não gera diferença em reais.")
-    st.info("Exportação para ajuste em massa indisponível: layout do Protheus ainda não validado.")
+    st.caption("Exportação Protheus ainda indisponível.")
     evidence = []
     for key, rows in current["evidence"].items():
         stage, address, _ = key.split("|")
@@ -188,7 +183,6 @@ def _camera_capture(st, token, stage, address, code, ident, catalog):
 
 def _capture(st, token, stage, address, code, lines, catalog):
     st.markdown(f"**Endereço {address}**" + (f" · Produto **{code}**" if code else ""))
-    st.caption("O endereço vem da tarefa; o QR atual contém produto, lote e quantidade.")
     ident = f"{stage}_{address}_{code}"
     with st.container():
         _camera_capture(st, token, stage, address, code, ident, catalog)
@@ -202,7 +196,6 @@ def _capture(st, token, stage, address, code, lines, catalog):
                 room.action(token, "add", stage, address, code, item=item, repeat=repeat)
             _apply(st, register)
     with st.expander("Etiqueta antiga ou lançamento manual"):
-        st.caption("Leia o produto e o lote separadamente, depois informe a quantidade contada.")
         with st.form("ann_manual_" + ident, clear_on_submit=True, enter_to_submit=False):
             raw_product = st.text_input("Código do produto", max_chars=32)
             lot = st.text_input("Lote", max_chars=32)
@@ -235,13 +228,9 @@ def _capture(st, token, stage, address, code, lines, catalog):
                     _apply(st, edit)
             if st.button("Remover leitura selecionada", key="ann_del_" + ident):
                 _apply(st, room.action, token, "remove", stage, address, code, line_id=line_id, expected=selected)
-    else:
-        st.caption("Nenhuma leitura salva neste rascunho.")
     with st.form("ann_deliver_" + ident, enter_to_submit=False):
         empty = st.checkbox("Endereço conferido e vazio" if stage in (FIRST, room.EXTRA) else "Produto não encontrado")
-        complete = st.checkbox("Conferi os lançamentos e confirmo o envio" if stage == FIRST else "Conferi toda a tarefa")
-        if stage == FIRST:
-            st.caption("Só o envio fecha a contagem para conferência e impede novas edições.")
+        complete = st.checkbox("Conferi os lançamentos. Após enviar, não poderei editar." if stage == FIRST else "Conferi toda a tarefa")
         note = st.text_area("Justificativa da auditoria", max_chars=400) if stage == AUDIT else ""
         if st.form_submit_button({FIRST:"Enviar para conferência", SECOND:"Confirmar 2ª contagem",
                                   AUDIT:"Validar auditoria", room.EXTRA:"Enviar conferência extra"}[stage]):
@@ -268,7 +257,7 @@ def _free_count(st, token, current):
                 st.session_state.pop("_annual_free_active", None)
                 st.rerun()
             if stage == room.EXTRA:
-                st.info("Conferência extra. Esta contagem não substitui nem soma com a oficial.")
+                st.info("Conferência extra · Fora do total oficial.")
             _capture(st, token, stage, address, "", current["drafts"][key], current["catalog"])
             return
     sent = st.session_state.get("_annual_last_sent_v3")
@@ -298,7 +287,6 @@ def _free_count(st, token, current):
         address = st.selectbox("Buscar endereço do S2", options, index=None, filter_mode="contains",
                                placeholder="Digite parte do endereço", accept_new_options=False,
                                key="ann_search_" + current["room_id"])
-        st.caption("A busca lista só endereços aptos do S2 do relatório ENDEREÇO. Se não aparecer, o endereço não pode ser aberto neste piloto.")
         if st.button("Abrir endereço", type="primary", disabled=address is None):
             open_at(address)
     else:
@@ -309,8 +297,7 @@ def _free_count(st, token, current):
     conflict = st.session_state.get("_annual_address_conflict")
     if conflict and conflict[0] == token:
         _, address, owner, message = conflict
-        st.warning(f"{address}: {message}")
-        st.caption("Prossiga só se a repetição for intencional. A conferência extra não entra no total oficial.")
+        st.warning(f"{address}: {message} A conferência extra fica fora do total oficial.")
         if st.button("Confirmar conferência extra"):
             open_at(address, owner)
         if st.button("Cancelar e escolher outro endereço"):
@@ -349,7 +336,6 @@ def _worker_stage(st, token, current, stage):
                 st.session_state["_ann_active_first"] = option
                 st.session_state.pop("_annual_last_sent_v3", None)
                 st.rerun()
-            st.caption("Abra um endereço por vez. Você pode sair e voltar sem entregar a contagem.")
             return
         address, code = active, ""
         if st.button("Sair do endereço sem enviar"):
@@ -361,7 +347,6 @@ def _worker_stage(st, token, current, stage):
                                format_func=lambda a: f"{a} · {sum(x == a for x, _ in tasks)} produto(s)")
         products = [c for a, c in tasks if a == address]
         code = st.selectbox("Produto pendente de recontagem", products, key="ann_second_code_" + address)
-        st.caption("A recontagem é cega: não são exibidos o saldo de corte nem a contagem anterior.")
     else:
         address, code = st.selectbox("Posição para auditoria", tasks,
             format_func=lambda pair: " · ".join(pair), key="ann_audit_task")
@@ -399,7 +384,7 @@ def _select(st, access):
 
 
 def _inventory_list(st, manager):
-    st.subheader("Inventários anuais" if manager else "Inventários disponíveis")
+    st.subheader("Inventários disponíveis")
     listings = room.list_rooms(manager=manager)
     if not listings:
         st.info("Nenhum inventário disponível." if manager else "Nenhum inventário liberado pela gestão no momento.")
@@ -412,16 +397,13 @@ def _inventory_list(st, manager):
                 if st.button("Acompanhar inventário", key="ann_manage_" + item["id"]):
                     _select(st, room.RoomAccess(item["id"], room.COORD, True))
             else:
-                st.caption("Selecione apenas a sua equipe para iniciar ou retomar a contagem.")
                 for role, name in item["teams"]:
                     if st.button(name, key=f'ann_team_{item["id"]}_{role}'):
                         _select(st, room.RoomAccess(item["id"], role))
 
 
 def render(st, *, manager=False):
-    st.warning("PILOTO · Dados fictícios do S2. Sem integração com o estoque real ou o Protheus.")
-    st.caption("No endereço de contagem, use Abrir câmera para ler QR ou lance manualmente.")
-    st.caption("Os rascunhos salvos ficam neste piloto por até três dias e dependem de o servidor não ser recriado.")
+    st.caption("Piloto S2 · Dados fictícios")
     token = st.session_state.get(STATE)
     if isinstance(token, room.RoomAccess) and token.manager == manager:
         try:
