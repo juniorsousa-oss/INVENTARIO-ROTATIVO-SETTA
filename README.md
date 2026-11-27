@@ -207,7 +207,10 @@ se o total for ímpar, a última pessoa conta sozinha. Em equipes mistas,
 informe os nomes fictícios e a classe de cada participante. O app associa
 um auxiliar a cada principal, na ordem do cadastro. Principais sem auxiliar
 contam sozinhos; se faltar principal para algum auxiliar, o piloto não
-pode ser criado até corrigir a formação.
+pode ser criado até corrigir a formação. Na prévia, use a opção
+**Trocar auxiliar de equipe** para escolher outro principal. Se ele já
+tiver auxiliar, os dois auxiliares trocam de equipe. A alteração é aplicada
+antes de iniciar o piloto.
 
 Na gestão, **Liberar na visão padrão** torna o piloto acessível para quem
 abrir o app sem login quando a política global permite. Nessa visão, basta

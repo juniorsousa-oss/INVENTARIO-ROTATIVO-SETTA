@@ -146,3 +146,54 @@ class MixedTeamsTests(unittest.TestCase):
         app = app.button[0].click().run()
         self.assertFalse(app.exception)
         self.assertIn("nome de cada participante", app.error[0].value)
+
+
+class AuxiliaryExchangeTests(unittest.TestCase):
+    def setUp(self):
+        self.rows = [{"Participante": name, "Classe": role} for name, role in
+                     (("Ana", r.PRINCIPAL), ("Bia", r.PRINCIPAL), ("Caio", r.PRINCIPAL),
+                      ("Luz", r.ASSISTANT), ("Sol", r.ASSISTANT))]
+        self.plan = r.formation(5, r.MIXED, self.rows, "Piloto de teste")
+        self.a, self.b, self.c = list(self.plan["teams"])
+
+    def test_move_and_swap(self):
+        teams = self.plan["teams"]
+        moved = r.move_auxiliary(teams, self.a, self.c)
+        self.assertEqual([x["name"] for x in moved.values()], ["Ana", "Bia / Sol", "Caio / Luz"])
+        both = r.move_auxiliary(moved, self.c, self.b)
+        self.assertEqual([x["name"] for x in both.values()], ["Ana", "Bia / Luz", "Caio / Sol"])
+        with self.assertRaisesRegex(ValueError, "outro principal"):
+            r.move_auxiliary(both, self.a, self.b)
+        with self.assertRaisesRegex(ValueError, "única equipe"):
+            r.assign_auxiliaries(teams, {self.a:"Luz", self.b:"Luz", self.c:""})
+        with self.assertRaisesRegex(ValueError, "única equipe"):
+            r.assign_auxiliaries(teams, {self.a:"Luz", self.b:"Não cadastrado", self.c:""})
+        with self.assertRaisesRegex(ValueError, "formação mudou"):
+            r.assign_auxiliaries(teams, {self.a:"Luz", self.b:"Sol"})
+
+    def test_preview_edit_and_started_room_uses_reviewed_teams(self):
+        from inventory_annual_ui import PREP, STATE
+        entry = "import streamlit as st\nfrom inventory_annual_ui import _setup\n_setup(st)"
+        app = AppTest.from_string(entry)
+        app.session_state[PREP] = {**self.plan, "people":5, "participants":self.rows, "ready":True}
+        def by_label(items, label):
+            return next(x for x in items if x.label == label)
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp)/"rooms.sqlite3"
+            with patch.object(r, "create_room", partial(r.create_room, path=path)), \
+                 patch.object(r, "view", partial(r.view, path=path)):
+                app.run()
+                app = by_label(app.selectbox, "Auxiliar").set_value(self.a).run()
+                app = by_label(app.selectbox, "Novo principal").set_value(self.c).run()
+                app = by_label(app.button, "Aplicar troca").click().run()
+                self.assertFalse(app.exception)
+                self.assertEqual(app.dataframe[0].value["Equipe"].tolist(), ["Ana", "Bia / Sol", "Caio / Luz"])
+                self.assertFalse(path.exists())
+                by_label(app.checkbox, "Confirmo o bloqueio simulado do S2").check()
+                app = by_label(app.button, "Iniciar piloto").click().run()
+                self.assertFalse(app.exception)
+                room = r.view(app.session_state[STATE])
+                self.assertEqual([x["name"] for x in room["teams"].values()], ["Ana", "Bia / Sol", "Caio / Luz"])
+                r.action(app.session_state[STATE], "publish", path=path)
+                self.assertEqual([name for _, name in r.list_rooms(path=path)[0]["teams"]],
+                                 ["Ana", "Bia / Sol", "Caio / Luz"])
