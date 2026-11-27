@@ -18,6 +18,31 @@ def _apply(st, fn, *args, **kwargs):
         st.rerun()
 
 
+def _exchange_auxiliary(st, plan):
+    teams = plan["teams"]
+    origins = [key for key, team in teams.items() if team["assistant"]]
+    if len(teams) < 2 or not origins:
+        return
+    rev = plan.get("revision", 0)
+    with st.expander("Trocar auxiliar de equipe"):
+        left, right = st.columns(2)
+        source = left.selectbox("Auxiliar", origins, index=None, placeholder="Selecione o auxiliar",
+                                format_func=lambda key: teams[key]["assistant"], key=f"ann_exchange_from_{rev}")
+        targets = [key for key in teams if key != source]
+        destination = right.selectbox("Novo principal", targets, index=None, placeholder="Selecione o principal",
+                                      format_func=lambda key: teams[key]["lead"], key=f"ann_exchange_to_{rev}_{source}",
+                                      disabled=source is None)
+        if destination and teams[destination]["assistant"]:
+            st.caption(f'Os auxiliares {teams[source]["assistant"]} e {teams[destination]["assistant"]} trocarão de equipe.')
+        if st.button("Aplicar troca", disabled=not destination, key=f"ann_exchange_apply_{rev}"):
+            def exchange():
+                updated = room.move_auxiliary(teams, source, destination)
+                st.session_state[PREP] = {**plan, "teams": updated,
+                                         "assignments": {k: row["assistant"] for k, row in updated.items()},
+                                         "revision": rev + 1}
+            _apply(st, exchange)
+
+
 def _setup(st):
     st.subheader("Preparar a contagem")
     plan = st.session_state.get(PREP) or {}
@@ -61,6 +86,7 @@ def _setup(st):
     st.caption(f'{plan["people"]} pessoa(s) · {len(plan["teams"])} equipe(s) · {plan["mode"]}')
     st.dataframe([{"Equipe": d["name"], "Principal": d["lead"],
                    "Auxiliar": d["assistant"] or "—"} for d in plan["teams"].values()], hide_index=True)
+    _exchange_auxiliary(st, plan)
     if st.button("Editar formação das equipes"):
         st.session_state[PREP] = {**plan, "ready": False}
         st.rerun()
@@ -69,7 +95,7 @@ def _setup(st):
         if st.form_submit_button("Iniciar piloto", type="primary"):
             def start():
                 token = room.create_room({}, locked, people=plan["people"], title=plan["title"],
-                    mode=plan["mode"], participants=plan["participants"])
+                    mode=plan["mode"], participants=plan["participants"], assignments=plan.get("assignments"))
                 st.session_state[STATE] = room.RoomAccess(room.view(token)["room_id"], room.COORD, True)
                 st.session_state.pop(PREP, None)
             _apply(st, start)

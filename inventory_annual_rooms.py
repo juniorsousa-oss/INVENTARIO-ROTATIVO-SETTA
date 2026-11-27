@@ -223,8 +223,37 @@ def formation(people, mode, participants, title):
     return {"title": _label(title, "o nome do inventário"), "teams": teams, "mode": mode}
 
 
-def create_room(assignment, locked, *, teams=None, people=None, title=TITLE, mode=None, participants="", path=PATH):
+def assign_auxiliaries(teams, assignments):
+    """Keep all original participants, assigning each auxiliary once."""
+    if not isinstance(assignments, dict) or assignments.keys() != teams.keys():
+        raise ValueError("A formação mudou. Confira as equipes novamente.")
+    expected = {team["assistant"] for team in teams.values() if team["assistant"]}
+    chosen = [name for name in assignments.values() if name]
+    if any(not isinstance(name, str) for name in assignments.values()):
+        raise ValueError("Selecione um auxiliar válido.")
+    if len(chosen) != len(expected) or set(chosen) != expected:
+        raise ValueError("Cada auxiliar precisa estar em uma única equipe.")
+    return {
+        key: {**team, "assistant": assignments[key],
+              "name": f'{team["lead"]} / {assignments[key]}' if assignments[key] else team["lead"]}
+        for key, team in teams.items()
+    }
+
+
+def move_auxiliary(teams, source, destination):
+    if source == destination or source not in teams or destination not in teams or not teams[source]["assistant"]:
+        raise ValueError("Selecione um auxiliar e outro principal.")
+    assignments = {key: team["assistant"] for key, team in teams.items()}
+    assignments[source], assignments[destination] = assignments[destination], assignments[source]
+    return assign_auxiliaries(teams, assignments)
+
+
+def create_room(assignment, locked, *, teams=None, people=None, title=TITLE, mode=None, participants="", assignments=None, path=PATH):
     info = formation(people, mode, participants, title) if mode else (validate_teams(teams, people, title) if teams is not None else {})
+    if assignments is not None:
+        if mode not in (PAIRS, MIXED):
+            raise ValueError("A troca de auxiliar está disponível apenas para equipes com auxiliares.")
+        info["teams"] = assign_auxiliaries(info["teams"], assignments)
     p = AnnualPilot()
     p.start(assignment, locked, teams=tuple(info["teams"]) if info else TEAMS, free=mode is not None, checked=mode is not None)
     token = secrets.token_urlsafe(24)
