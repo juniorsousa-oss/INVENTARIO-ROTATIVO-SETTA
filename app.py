@@ -1252,10 +1252,10 @@ _render_setta_auth_gate()
 
 if _annual_pilot_active:
  from inventory_annual_ui import render as render_annual_pilot
- _sidebar_status_slot.info('Inventário Anual · Piloto sem dados reais')
+ _sidebar_status_slot.info('Inventário Anual · Piloto')
  setta_shell.render_page(st,'Inventário Anual')
  _annual_manager=_can_manage_inventory() and _session_profile()=='Gestor'
- render_annual_pilot(st,manager=_annual_manager,
+ render_annual_pilot(st,manager=_annual_manager,excluded=ESTOQUE_ENDERECOS_NAO_DISPONIVEIS,
   sign_in=(lambda: _render_setta_login_form(compact=True)) if not _auth_user() else None,
   sign_out=_logout_inventory_user if _auth_user() else None,
  )

@@ -54,14 +54,27 @@ def normalize_address(value):
     return text
 
 
-def reading(product, address, lot, amount, label_id="", *, catalog=None):
-    product, address, lot, label_id = (v.strip().upper() for v in (product, address, lot, label_id))
+def resolve_product(product, catalog=None):
+    product = product.strip().upper()
     catalog = CATALOG if catalog is None else catalog
-    if product not in catalog:
+    # Numeric aliases are for the synthetic catalog only, never for real products.
+    if product not in catalog and set(catalog) == set(CATALOG):
         product = DEMO_PRODUCTS.get(product, product)
     if product not in catalog:
-        raise ValueError("Produto não encontrado no catálogo do piloto.")
+        raise ValueError("Produto não encontrado no catálogo deste inventário.")
+    return product
+
+
+class IdenticalReading(ValueError):
+    pass
+
+
+def reading(product, address, lot, amount, label_id="", *, catalog=None):
+    product = resolve_product(product, catalog)
+    address, lot, label_id = (v.strip().upper() for v in (address, lot, label_id))
     address = normalize_address(address)
+    if not lot and catalog is not None and set(catalog) != set(CATALOG):
+        lot = "SEM-LOTE"
     if not FIELD.fullmatch(lot) or (label_id and not FIELD.fullmatch(label_id)):
         raise ValueError("Informe um lote válido. Use apenas letras, números, ponto, hífen ou sublinhado.")
     if not re.fullmatch(r"\d{1,10}(?:[.,]\d{1,6})?", str(amount).strip(), flags=re.ASCII):
@@ -249,7 +262,7 @@ def move_auxiliary(teams, source, destination):
     return assign_auxiliaries(teams, assignments)
 
 
-def create_room(assignment, locked, *, teams=None, people=None, title=TITLE, mode=None, participants="", assignments=None, path=PATH):
+def create_room(assignment, locked, *, teams=None, people=None, title=TITLE, mode=None, participants="", assignments=None, sample=None, path=PATH):
     info = formation(people, mode, participants, title) if mode else (validate_teams(teams, people, title) if teams is not None else {})
     if assignments is not None:
         if mode not in (PAIRS, MIXED):
@@ -257,6 +270,12 @@ def create_room(assignment, locked, *, teams=None, people=None, title=TITLE, mod
         info["teams"] = assign_auxiliaries(info["teams"], assignments)
     p = AnnualPilot()
     p.start(assignment, locked, teams=tuple(info["teams"]) if info else TEAMS, free=mode is not None, checked=mode is not None)
+    if sample is not None:
+        if not p.free:
+            raise ValueError("A validação privada exige equipes na contagem por endereço.")
+        p._snapshot, p._total, p._catalog = sample.stock, sample.totals, sample.catalog
+        p.address_book, p.tracked, p.lot_snapshot = sample.addresses, sample.tracked, sample.lots
+        info["real_sample"] = True
     token = secrets.token_urlsafe(24)
     room = secrets.token_hex(8)
     now = int(time.time())
@@ -266,7 +285,7 @@ def create_room(assignment, locked, *, teams=None, people=None, title=TITLE, mod
         if conn.execute("SELECT COUNT(*) FROM annual_rooms").fetchone()[0] >= MAX_ROOMS:
             raise ValueError("Limite de pilotos em uso. Entre em um piloto existente.")
         conn.execute("INSERT INTO annual_rooms VALUES (?,?,?)", (room, now + TTL, _encode(_state(p, info=info))))
-        keys = {COORD: token, **worker_codes(token, p.teams)}
+        keys = ({COORD: token} if sample is not None else {COORD: token, **worker_codes(token, p.teams)})
         conn.executemany("INSERT INTO annual_access VALUES (?,?,?)",
                          [(_sha(code), room, role) for role, code in keys.items()])
     return token
@@ -293,13 +312,13 @@ def list_rooms(*, manager=False, path=PATH):
     for room_id, raw in rows:
         state = json.loads(raw)
         info = state.get("info") or {}
-        visible = bool(info.get("visible_to_guests")) and bool(state.get("free"))
+        visible = bool(info.get("visible_to_guests")) and bool(state.get("free")) and not info.get("real_sample")
         if not manager and (not visible or state["closed"]):
             continue
         roles = state.get("roster") or ()
         teams = info.get("teams") or {}
         listings.append({"id": room_id, "title": _display_title(info),
-                         "closed": bool(state["closed"]), "visible": visible,
+                         "closed": bool(state["closed"]), "visible": visible, "real_sample": bool(info.get("real_sample")),
                          "can_publish": bool(state.get("free")),
                          "teams": [(role, teams.get(role, {}).get("name", role))
                                    for role in worker_roles(roles) if role != AUDITOR] if roles else []})
@@ -312,15 +331,17 @@ def _authorized_selection(conn, access):
     if not row:
         raise ValueError("Este inventário não está mais disponível.")
     state = json.loads(row[0])
+    info = state.get("info") or {}
     if access.manager:
-        if access.role not in (COORD, AUDITOR):
+        internal_roles = worker_roles(tuple(state.get("roster") or ())) if info.get("real_sample") else ()
+        if access.role not in (COORD, AUDITOR, *internal_roles):
             raise ValueError("Selecione Gestão ou Auditoria.")
     else:
         info = state.get("info") or {}
         allowed = tuple(state.get("roster") or ())
         if len(allowed) == 1:
             allowed += (INDEPENDENT,)
-        if (not state.get("free") or state["closed"] or not info.get("visible_to_guests")
+        if (info.get("real_sample") or not state.get("free") or state["closed"] or not info.get("visible_to_guests")
                 or access.role not in allowed):
             raise ValueError("Este inventário ou esta equipe não está mais disponível.")
     return access.room_id, access.role, state
@@ -451,7 +472,7 @@ def view(token, *, path=PATH):
     teams = info.get("teams") or {idx: {"name": idx, "lead": "", "assistant": ""} for idx in p.teams}
     display = teams.get(role, {}).get("name", role)
     common = {"role": role, "closed": bool(p.closed_at), "display": display, "title": _display_title(info),
-              "room_id": room_id, "free": p.free, "catalog": {k: v[0] for k, v in p._catalog.items()}}
+              "room_id": room_id, "free": p.free, "real_sample": bool(info.get("real_sample")), "catalog": {k: v[0] for k, v in p._catalog.items()}}
     extras = state.get("extras") or {}
     if role == COORD:
         queue = []
@@ -534,6 +555,8 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
             p._require_open()
             if not p.free:
                 raise ValueError("Somente pilotos com equipes podem ser mostrados na visão padrão.")
+            if event == "publish" and (state.get("info") or {}).get("real_sample"):
+                raise ValueError("A validação com dados reais é privada e não pode ser liberada sem login.")
             state.setdefault("info", {})["visible_to_guests"] = event == "publish"
         elif event == "close" and role == COORD:
             p.close()
@@ -554,7 +577,7 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
                     (r["product"], r["lot"], Decimal(r["quantity"])) == (item.product, item.lot, item.quantity)
                     for r in lines
                 ):
-                    raise ValueError("Leitura idêntica. Confirme que é outra etiqueta física para somar.")
+                    raise IdenticalReading("Leitura idêntica. Confirme que é outra etiqueta física para somar.")
                 lines.append({**asdict(item), "quantity": str(item.quantity), "id": secrets.token_hex(8)})
                 drafts[key] = lines
             elif event == "remove":

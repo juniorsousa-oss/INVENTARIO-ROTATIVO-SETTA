@@ -138,7 +138,7 @@ render(st, manager=manager, sign_in=None if manager else lambda: st.text_input("
         with patch.object(r, "list_rooms", partial(r.list_rooms, path=self.path)), \
              patch.object(r, "view", partial(r.view, path=self.path)), \
              patch.object(r, "action", partial(r.action, path=self.path)), \
-             patch("inventory_annual_ui.scan_qr", return_value=None):
+             patch("inventory_annual_ui.scan_label", return_value=None):
             def click(app, label):
                 [button] = [b for b in app.button if b.label == label]
                 app = button.click().run()
@@ -147,14 +147,16 @@ render(st, manager=manager, sign_in=None if manager else lambda: st.text_input("
 
             app = click(AppTest.from_string(entry).run(), "Equipe A")
             self.assertFalse(app.segmented_control)
-            app = app.selectbox[0].set_value("A-01").run()
+            app = app.text_input[0].set_value("A-01").run()
             app = click(app, "Abrir endereço")
             self.assertNotIn("Atualizar fila", [b.label for b in app.button])
             self.assertIn("Revisar e enviar", [e.label for e in app.expander])
             app = app.radio[0].set_value("Manual").run()
             for text in app.text_input:
+                if text.label == "Bipar etiqueta":
+                    continue
                 text.set_value({"Código do produto":"00000001", "Lote":"000101", "Quantidade contada":"3"}[text.label])
-            app = click(app, "Adicionar lançamento manual")
+            app = click(app, "Adicionar lançamento")
             self.assertIn("Revisar rascunho · 1 lançamento salvo", [e.label for e in app.expander])
             app = click(app, "Sair do endereço sem enviar")
             self.assertIn("Retomar rascunho (1)", [e.label for e in app.expander])
@@ -194,7 +196,7 @@ render(st, manager=manager, sign_in=None if manager else lambda: st.text_input("
             self.assertIn("Liberado para equipes", [x.value for x in manager.caption])
             guest = click(guest.run(), "Equipe A")
             self.assertTrue(any("Acesso: Equipe A" == x.value for x in guest.text))
-            self.assertIn("Buscar endereço de estoque", [x.label for x in guest.selectbox])
+            self.assertIn("Código do endereço", [x.label for x in guest.text_input])
             self.assertIn("Inventário anual de estoque", [x.value for x in guest.caption])
             self.assertFalse(any("Código de acesso" in x.label for x in guest.text_input))
             self.assertFalse(any(x.label == "Abrir auditoria" for x in guest.button))
