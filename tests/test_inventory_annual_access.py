@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import inventory_annual_rooms as r
-from inventory_annual_pilot import FIRST, INDEPENDENT
+from inventory_annual_pilot import FIRST, SECOND, INDEPENDENT
 
 
 class AnnualAccessTests(unittest.TestCase):
@@ -106,6 +106,32 @@ render(st, manager=manager, sign_in=None if manager else lambda: st.text_input("
             self.assertNotIn("Acompanhar inventário", [x.label for x in guest.button])
             self.assertIn("Equipe A", [x.label for x in guest.button])
 
+    def test_coordinator_surfaces_audit_only_when_due(self):
+        r.action(self.gestor, "publish", path=self.path)
+        team2 = r.RoomAccess(self.id, "EQ-000002")
+        r.action(self.guest, "open", address="A-01", path=self.path)
+        r.action(self.guest, "add", FIRST, "A-01",
+                 item=r.parse_demo_label("00000001,000101,3", "A-01"), path=self.path)
+        r.action(self.guest, "submit", FIRST, "A-01", complete=True, path=self.path)
+        r.action(team2, "add", SECOND, "A-01", "SIM-001",
+                 item=r.parse_demo_label("00000001,000101,4", "A-01"), path=self.path)
+        r.action(team2, "submit", SECOND, "A-01", "SIM-001", complete=True, path=self.path)
+        entry = "import streamlit as st\nfrom inventory_annual_ui import render\nrender(st, manager=True)"
+        with patch.object(r, "list_rooms", partial(r.list_rooms, path=self.path)), \
+             patch.object(r, "view", partial(r.view, path=self.path)):
+            app = AppTest.from_string(entry).run()
+            app = app.button(key=f"ann_manage_{self.id}").click().run()
+            self.assertFalse(app.exception)
+            self.assertEqual(app.selectbox[0].value, "review")
+            self.assertEqual(app.dataframe[0].value.iloc[0]["Etapa"], "Auditoria")
+            btn = next(b for b in app.button if b.label == "Abrir auditoria")
+            app = btn.click().run()
+            self.assertFalse(app.exception)
+            btn = next(b for b in app.button if b.label == "Voltar ao andamento")
+            app = btn.click().run()
+            self.assertFalse(app.exception)
+            self.assertEqual(app.segmented_control[0].value, "Andamento")
+
     def test_ui_access_does_not_prompt_for_team_code(self):
         def click(app, label):
             [button] = [b for b in app.button if b.label == label]
@@ -124,7 +150,12 @@ render(st, manager=manager, sign_in=None if manager else lambda: st.text_input("
             self.assertEqual([c.value for c in guest.caption], ["Piloto · Dados fictícios"])
             manager = AppTest.from_string(entry + "render(st, manager=True)").run()
             manager = click(manager, "Acompanhar inventário")
-            manager = click(manager, "Liberar na visão padrão")
+            self.assertIn("Somente gestão", [x.value for x in manager.caption])
+            self.assertEqual(manager.segmented_control[0].value, "Andamento")
+            self.assertNotIn("Preparar cópia", [x.label for x in manager.button])
+            self.assertNotIn("Abrir auditoria", [x.label for x in manager.button])
+            manager = click(manager, "Liberar para equipes")
+            self.assertIn("Liberado para equipes", [x.value for x in manager.caption])
             guest = click(guest.run(), "Equipe A")
             self.assertTrue(any("Acesso: Equipe A" == x.value for x in guest.text))
             self.assertIn("Buscar endereço de estoque", [x.label for x in guest.selectbox])
@@ -137,10 +168,12 @@ render(st, manager=manager, sign_in=None if manager else lambda: st.text_input("
             r.action(other, "add", r.EXTRA, "A-01",
                      item=r.parse_demo_label("00000001,000101,3", "A-01"))
             r.action(other, "submit", r.EXTRA, "A-01", complete=True)
-            manager = manager.run()
+            manager = manager.segmented_control[0].set_value("Equipes").run()
             self.assertFalse(manager.exception)
             self.assertTrue(any("Parafuso" in f.value["Descrição"].tolist()
                                 for f in manager.dataframe if "Descrição" in f.value))
+            manager = manager.segmented_control[0].set_value("Gerenciar").run()
+            self.assertIn("Preparar cópia", [x.label for x in manager.button])
             click(manager, "Retirar da visão padrão")
             self.assertTrue(guest.run().info)
 

@@ -102,16 +102,95 @@ def _setup(st):
 
 def _coordinator(st, token, current):
     pilot = current["pilot"]
-    st.subheader("Acompanhar endereços")
-    st.text(current["title"])
-    st.caption("Saldo de corte: " + pilot.started_at.strftime("%d/%m/%Y às %H:%M"))
+    closed = bool(pilot.closed_at)
+    st.subheader(current["title"])
+    if closed:
+        status = "Encerrado"
+    elif not pilot.free:
+        status = "Em contagem"
+    else:
+        status = "Liberado para equipes" if current["visible"] else "Somente gestão"
+    st.caption(status)
+
+    options = ["Resultado" if closed else "Andamento", "Equipes", "Gerenciar"]
+    section = st.segmented_control("Visão do gestor", options, default=options[0], required=True,
+                                   label_visibility="collapsed", key=f'ann_coord_{"closed" if closed else "open"}_{current["room_id"]}')
+    if section == "Gerenciar":
+        _coordinator_management(st, token, current)
+        return
+    if section == "Equipes":
+        _coordinator_teams(st, current)
+        return
+    if closed:
+        _coordinator_result(st, current)
+        return
+
     covered = set(pilot.eligible_addresses()) | pilot.assignment.keys()
-    st.progress(sum(pilot.address_status(a) == VALIDATED for a in covered) / len(covered))
-    with st.expander("Equipes e endereços"):
-        st.dataframe([{"Equipe": data["name"], "Principal": data["lead"], "Auxiliar": data["assistant"],
-                       "Endereços": ", ".join(a for a, owner in sorted(pilot.assignment.items()) if owner == idx) or "—"}
-                      for idx, data in current["teams"].items()], hide_index=True)
+    validated = sum(pilot.address_status(a) == VALIDATED for a in covered)
+    st.progress(validated / len(covered) if covered else 0,
+                text=f"{validated} de {len(covered)} endereços validados")
+    if pilot.free and not current["visible"]:
+        st.caption("O piloto só aparece para as equipes após a liberação. A visão padrão não exige login.")
+        if st.button("Liberar para equipes", type="primary"):
+            _apply(st, room.action, token, "publish")
+
+    st.subheader("Pendências")
+    queue = current["queue"]
+    reviews = [row for row in queue if row[2] in (SECOND, AUDIT)]
+    firsts = [row for row in queue if row[2] == FIRST]
+    if queue:
+        labels = [f"Recontagem e auditoria ({len(reviews)})", f"Primeira contagem ({len(firsts)})"]
+        # Keys are stable even as counts change on refresh.
+        active = st.selectbox("Etapa da fila", ["review", "first"], index=0 if reviews else 1,
+                              format_func=lambda stage: labels[0 if stage == "review" else 1],
+                              label_visibility="collapsed", key=f'ann_queue_filter_{current["room_id"]}')
+        rows = reviews if active == "review" else firsts
+        if rows:
+            any_saved = any(row[-1] for row in rows)
+            frame = []
+            for address, code, stage, responsible, draft in rows:
+                row = {"Endereço": address, "Responsável": current["teams"].get(responsible, {}).get("name", responsible)}
+                if active == "review":
+                    row.update({"Produto": code, "Etapa": "Auditoria" if stage == AUDIT else "Recontagem"})
+                if any_saved:
+                    row["Rascunho"] = "Salvo" if draft else "—"
+                frame.append(row)
+            st.dataframe(frame, hide_index=True, height=min(320, 39 + 35 * len(frame)))
+        else:
+            st.caption("Nenhuma pendência nesta etapa.")
+        if active == "review" and any(row[2] == AUDIT for row in reviews) and st.button("Abrir auditoria"):
+            _select(st, room.RoomAccess(current["room_id"], room.AUDITOR, True))
+    else:
+        st.success("Nenhuma pendência na fila.")
+        if pilot.ready() and st.button("Fechar piloto e apurar", type="primary"):
+            _apply(st, room.action, token, "close")
+    st.button("Atualizar fila", key="ann_update", help="Busca alterações salvas pelas outras equipes.")
+
+
+def _coordinator_teams(st, current):
+    pilot = current["pilot"]
+    st.subheader("Equipes e endereços")
+    st.dataframe([{"Equipe": data["name"], "Principal": data["lead"], "Auxiliar": data["assistant"],
+                   "Endereços": ", ".join(a for a, owner in sorted(pilot.assignment.items()) if owner == idx) or "—"}
+                  for idx, data in current["teams"].items()], hide_index=True)
+    if current["extras"]:
+        with st.expander("Conferências extras • fora do total"):
+            st.dataframe([{"Endereço": a, "Equipe": current["teams"][t]["name"],
+                           "Situação": "Enviada" if status == "submitted" else "Em contagem"}
+                          for a, t, status, _ in current["extras"]], hide_index=True)
+            details = [{"Endereço": a, "Equipe": current["teams"][t]["name"],
+                        **dict(row, Descrição=current["catalog"].get(row["Produto"], ""), Quantidade=float(row["Quantidade"]))}
+                       for a, t, status, rows in current["extras"] if status == "submitted" for row in rows]
+            if details:
+                st.dataframe(details, hide_index=True)
+
+
+def _coordinator_management(st, token, current):
+    pilot = current["pilot"]
+    st.caption("Saldo de corte: " + pilot.started_at.strftime("%d/%m/%Y às %H:%M"))
     if pilot.free:
+        if not pilot.closed_at and current["visible"] and st.button("Retirar da visão padrão"):
+            _apply(st, room.action, token, "hide")
         with st.expander("Cópia de segurança"):
             if st.button("Preparar cópia", key="annual_prepare_backup"):
                 try:
@@ -124,38 +203,10 @@ def _coordinator(st, token, current):
                         file_name=f'inventario-anual-{current["room_id"]}.json',
                         mime="application/json", on_click="ignore", key="annual_download_backup",
                     )
-    if pilot.free and not pilot.closed_at:
-        if current["visible"]:
-            if st.button("Retirar da visão padrão"):
-                _apply(st, room.action, token, "hide")
-        else:
-            if st.button("Liberar na visão padrão", help="Disponível sem login. Use nomes fictícios e não publique dados internos."):
-                _apply(st, room.action, token, "publish")
-    if not pilot.closed_at and st.button("Abrir auditoria"):
-        _select(st, room.RoomAccess(current["room_id"], room.AUDITOR, True))
-    st.subheader("Fila de pendências")
-    queue = current["queue"]
-    if queue:
-        st.dataframe([{"Endereço": a, "Produto": c or "Todo o endereço", "Próxima ação": stage,
-                       "Responsável": current["teams"].get(responsible, {}).get("name", responsible), "Rascunho": "Salvo" if draft else "—"}
-                      for a, c, stage, responsible, draft in queue], hide_index=True)
-    else:
-        st.success("Nenhuma pendência na fila.")
-    if current["extras"]:
-        with st.expander("Conferências extras • fora do total"):
-            st.dataframe([{"Endereço": a, "Equipe": current["teams"][t]["name"],
-                           "Situação": "Enviada" if status == "submitted" else "Em contagem"}
-                           for a, t, status, _ in current["extras"]], hide_index=True)
-            details = [{"Endereço": a, "Equipe": current["teams"][t]["name"],
-                        **dict(row, Descrição=current["catalog"].get(row["Produto"], ""), Quantidade=float(row["Quantidade"]))}
-                       for a, t, status, rows in current["extras"] if status == "submitted" for row in rows]
-            if details:
-                st.dataframe(details, hide_index=True)
-    if not pilot.closed_at:
-        if st.button("Fechar piloto e apurar", type="primary", disabled=not pilot.ready(),
-                     help="Conclua os endereços e as divergências pendentes para fechar."):
-            _apply(st, room.action, token, "close")
-        return
+
+
+def _coordinator_result(st, current):
+    pilot = current["pilot"]
     st.success("Piloto encerrado.")
     st.subheader("Fechamento por produto")
     frame = [{"Código": code, "Produto": desc, "Contado (aptos)": float(counted),
@@ -471,15 +522,17 @@ def render(st, *, manager=False, sign_in=None, sign_out=None):
             st.session_state.pop(STATE, None)
             st.warning(str(exc))
         else:
-            if st.button("Voltar aos inventários"):
+            if current["role"] == room.AUDITOR:
+                if st.button("Voltar ao andamento"):
+                    _select(st, room.RoomAccess(current["room_id"], room.COORD, True))
+            elif st.button("Voltar aos inventários"):
                 _select(st, None)
-            st.text("Acesso: " + current["display"])
-            if current["role"] != room.COORD:
-                st.caption(current["title"])
-            st.button("Atualizar fila", key="ann_update", help="Busca alterações salvas pelas outras duplas.")
             if current["role"] == room.COORD:
                 _coordinator(st, token, current)
             else:
+                st.text("Acesso: " + current["display"])
+                st.caption(current["title"])
+                st.button("Atualizar fila", key="ann_update", help="Busca alterações salvas pelas outras equipes.")
                 _worker(st, token, current)
             return
     else:
