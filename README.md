@@ -210,7 +210,8 @@ contam sozinhos; se faltar principal para algum auxiliar, o piloto não
 pode ser criado até corrigir a formação. Na prévia, use a opção
 **Trocar auxiliar de equipe** para escolher outro principal. Se ele já
 tiver auxiliar, os dois auxiliares trocam de equipe. A alteração é aplicada
-antes de iniciar o piloto.
+antes de iniciar o piloto. Para começar, clique em **Iniciar piloto**; isso
+congela apenas a base fictícia da sala e não bloqueia o S2 real.
 
 Na gestão, **Liberar na visão padrão** torna o piloto acessível para quem
 abrir o app sem login quando a política global permite. Nessa visão, basta

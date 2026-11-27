@@ -90,15 +90,14 @@ def _setup(st):
     if st.button("Editar formação das equipes"):
         st.session_state[PREP] = {**plan, "ready": False}
         st.rerun()
-    with st.form("ann_start_free", enter_to_submit=False):
-        locked = st.checkbox("Confirmo o bloqueio simulado do S2")
-        if st.form_submit_button("Iniciar piloto", type="primary"):
-            def start():
-                token = room.create_room({}, locked, people=plan["people"], title=plan["title"],
-                    mode=plan["mode"], participants=plan["participants"], assignments=plan.get("assignments"))
-                st.session_state[STATE] = room.RoomAccess(room.view(token)["room_id"], room.COORD, True)
-                st.session_state.pop(PREP, None)
-            _apply(st, start)
+    if st.button("Iniciar piloto", type="primary"):
+        def start():
+            # Congela apenas a base fictícia da sala; não bloqueia o S2 real.
+            token = room.create_room({}, True, people=plan["people"], title=plan["title"],
+                mode=plan["mode"], participants=plan["participants"], assignments=plan.get("assignments"))
+            st.session_state[STATE] = room.RoomAccess(room.view(token)["room_id"], room.COORD, True)
+            st.session_state.pop(PREP, None)
+        _apply(st, start)
 
 
 def _coordinator(st, token, current):
