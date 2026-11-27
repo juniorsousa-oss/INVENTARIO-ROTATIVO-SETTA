@@ -448,7 +448,7 @@ def _inventory_list(st, manager):
                             _select(st, room.RoomAccess(item["id"], role))
 
 
-def render(st, *, manager=False):
+def render(st, *, manager=False, sign_in=None, sign_out=None):
     st.caption("Piloto · Dados fictícios")
     token = st.session_state.get(STATE)
     if isinstance(token, room.RoomAccess) and token.manager == manager:
@@ -479,3 +479,10 @@ def render(st, *, manager=False):
             _setup(st)
     else:
         _inventory_list(st, False)
+    if sign_out is not None:
+        label = "Sair do modo gestor" if manager else "Sair da conta"
+        if st.button(label, key="ann_manager_logout", icon=":material/logout:"):
+            sign_out()
+    elif not manager and sign_in is not None:
+        with st.expander("Entrar como gestor"):
+            sign_in()

@@ -366,6 +366,26 @@ def _render_setta_login_form(*,compact=False):
    else:
     st.error('Usuário ou senha inválidos.')
 
+
+def _logout_inventory_user():
+ try:
+  setta_auth.logout(central_data.supabase_key(),_session_auth_token())
+ except Exception:
+  pass
+ st.session_state.pop('_setta_auth_user',None)
+ st.session_state.pop('_annual_inventory_pilot_v1',None)
+ st.session_state.pop('_annual_inventory_pilot_code_v2',None)
+ st.session_state.pop('_ann_active_first',None)
+ st.session_state.pop('_annual_open_team_v3',None)
+ st.session_state.pop('_annual_memberships_v3',None)
+ st.session_state.pop('_annual_last_sent_v3',None)
+ st.session_state.pop('_annual_prepare_teams_v3',None)
+ st.session_state.pop('_annual_free_active',None)
+ st.session_state.pop('_annual_address_conflict',None)
+ st.session_state.pop('_annual_extra_sent',None)
+ _setta_close_sidebar()
+ st.rerun()
+
 def _render_setta_auth_gate():
  if not _setta_login_required() or _auth_user():
   return True
@@ -1209,24 +1229,8 @@ with st.sidebar:
     '<div class="sidebar-status-card"><div class="sidebar-status-name">'
     f'{_sidebar_name}</div><div class="sidebar-status-meta">{_session_profile()}</div></div>'
    )
-   if st.button('Sair',key='setta_auth_logout',use_container_width=True):
-    try:
-     setta_auth.logout(central_data.supabase_key(),_session_auth_token())
-    except Exception:
-     pass
-    st.session_state.pop('_setta_auth_user',None)
-    st.session_state.pop('_annual_inventory_pilot_v1',None)
-    st.session_state.pop('_annual_inventory_pilot_code_v2',None)
-    st.session_state.pop('_ann_active_first',None)
-    st.session_state.pop('_annual_open_team_v3',None)
-    st.session_state.pop('_annual_memberships_v3',None)
-    st.session_state.pop('_annual_last_sent_v3',None)
-    st.session_state.pop('_annual_prepare_teams_v3',None)
-    st.session_state.pop('_annual_free_active',None)
-    st.session_state.pop('_annual_address_conflict',None)
-    st.session_state.pop('_annual_extra_sent',None)
-    _setta_close_sidebar()
-    st.rerun()
+   if not _annual_pilot_active and st.button('Sair',key='setta_auth_logout',use_container_width=True):
+    _logout_inventory_user()
 
 
 if not _annual_pilot_active and st.session_state.get('_operational_persistence_error'):
@@ -1250,10 +1254,11 @@ if _annual_pilot_active:
  from inventory_annual_ui import render as render_annual_pilot
  _sidebar_status_slot.info('Inventário Anual · Piloto sem dados reais')
  setta_shell.render_page(st,'Inventário Anual')
- render_annual_pilot(st,manager=_can_manage_inventory() and _session_profile()=='Gestor')
- if not _auth_user():
-  with st.expander('Entrar como gestor'):
-   _render_setta_login_form(compact=True)
+ _annual_manager=_can_manage_inventory() and _session_profile()=='Gestor'
+ render_annual_pilot(st,manager=_annual_manager,
+  sign_in=(lambda: _render_setta_login_form(compact=True)) if not _auth_user() else None,
+  sign_out=_logout_inventory_user if _auth_user() else None,
+ )
  st.stop()
 
 # Ao abrir/recarregar o navegador, a sessão sempre consulta as versões
