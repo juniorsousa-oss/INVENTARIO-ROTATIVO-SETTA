@@ -46,6 +46,16 @@ class AnnualAccessTests(unittest.TestCase):
         r.action(self.gestor, 'publish', path=self.path)
         self.assertTrue(r.view(self.guest, path=self.path)['drafts'])
 
+    def test_old_default_is_normalized_but_custom_titles_are_preserved(self):
+        for title, expected in (
+            ("Inventário anual S2", "Inventário anual de estoque"),
+            ("Mutirão de janeiro", "Mutirão de janeiro"),
+        ):
+            token = r.create_room({}, True, people=1, title=title, mode=r.INDIVIDUAL,
+                                  participants="Equipe A", path=self.path)
+            self.assertEqual(r.view(token, path=self.path)["title"], expected)
+            self.assertEqual(r.list_rooms(manager=True, path=self.path)[0]["title"], expected)
+
     def test_invalid_room_and_snapshot_catalog(self):
         with self.assertRaises(ValueError):
             r.view(r.RoomAccess('missing', r.COORD, True), path=self.path)
@@ -72,12 +82,14 @@ class AnnualAccessTests(unittest.TestCase):
             self.assertFalse(guest.exception)
             self.assertTrue(guest.info)
             self.assertFalse(guest.text_input)
-            self.assertEqual([c.value for c in guest.caption], ["Piloto S2 · Dados fictícios"])
+            self.assertEqual([c.value for c in guest.caption], ["Piloto · Dados fictícios"])
             manager = AppTest.from_string(entry + "render(st, manager=True)").run()
             manager = click(manager, "Acompanhar inventário")
             manager = click(manager, "Liberar na visão padrão")
             guest = click(guest.run(), "Equipe A")
             self.assertTrue(any("Acesso: Equipe A" == x.value for x in guest.text))
+            self.assertIn("Buscar endereço de estoque", [x.label for x in guest.selectbox])
+            self.assertIn("Inventário anual de estoque", [x.value for x in guest.caption])
             self.assertFalse(any("Código de acesso" in x.label for x in guest.text_input))
             self.assertFalse(any(x.label == "Abrir auditoria" for x in guest.button))
             other = r.RoomAccess(self.id, "EQ-000002")

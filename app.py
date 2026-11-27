@@ -896,7 +896,7 @@ def sev(v):return 'BAIXO' if v<=100 else 'MÉDIO' if v<=1000 else 'ALTO'
 
 def close_inv(inv):
  if not st.session_state.get('_inventory_scope_ready'):
-  st.session_state['_inventory_close_error']='ESCOPO S2 NÃO VALIDADO. ATUALIZE AS FONTES ANTES DE ENCERRAR.'
+  st.session_state['_inventory_close_error']='ESTOQUE NÃO VALIDADO. ATUALIZE AS FONTES ANTES DE ENCERRAR.'
   return False
  if not _can_manage_inventory():
   st.session_state['_inventory_close_error']='AUTENTIQUE UM GESTOR OU ALMOXARIFADO PARA AUTORIZAR O ENCERRAMENTO.'
@@ -906,7 +906,7 @@ def close_inv(inv):
  _valid_rows=_valid_inventory_rows(inv)
  pendentes=[r for r in pendentes if r in _valid_rows]
  if not _valid_rows:
-  st.session_state['_inventory_close_error']='NENHUMA POSIÇÃO PERTENCENTE AO S2. REVISE O INVENTÁRIO EM VEZ DE ENCERRAR.'
+  st.session_state['_inventory_close_error']='NENHUMA POSIÇÃO DO ESTOQUE APTA PARA CONTAGEM. REVISE O INVENTÁRIO EM VEZ DE ENCERRAR.'
   return False
  if pendentes:
   st.session_state['_inventory_close_error']=(
@@ -1456,7 +1456,7 @@ elif active=='Inventário Rotativo':
      st.caption('Inconsistências abertas do Inventário Rotativo continuam sendo incluídas automaticamente.')
     x,y=st.columns(2)
     if not st.session_state.get('_inventory_scope_ready'):
-     st.error('ESCOPO S2 NÃO VALIDADO. NOVOS INVENTÁRIOS BLOQUEADOS ATÉ SINCRONIZAR ANALÍTICO E FECHAMENTO MENSAL.')
+     st.error('ESTOQUE NÃO VALIDADO. NOVOS INVENTÁRIOS BLOQUEADOS ATÉ SINCRONIZAR ANALÍTICO E FECHAMENTO MENSAL.')
     _scope_summary=st.session_state.get('_inventory_scope_stats') or {}
     if _scope_summary.get('blocked_ambiguous_codes'):
      st.warning(f"{_scope_summary['blocked_ambiguous_codes']} código(s) multi-armazém foram bloqueados porque ENDEREÇO não identifica ARMZ.")
@@ -1571,7 +1571,7 @@ elif active=='Inventário Rotativo':
    _document_scope_rows=_valid_inventory_rows(inv)
    _removed_scope=len(inv.get('rows',[]))-len(_document_scope_rows)
    if _removed_scope:
-    st.info(f'{_removed_scope} posição(ões) do documento estão FORA DO ESCOPO S2 e não entram na apuração. O histórico permanece preservado em Registros > Histórico > Auditoria.')
+    st.info(f'{_removed_scope} posição(ões) do documento estão FORA DO ESCOPO DO INVENTÁRIO e não entram na apuração. O histórico permanece preservado em Registros > Histórico > Auditoria.')
    prof=_session_profile()
    if prof in {'Operador','Almoxarifado'} and inv['status']=='EM CONTAGEM':
     total_pos=len(_document_scope_rows)
@@ -1927,7 +1927,8 @@ elif active=='Registro':
      'Código':_row.get('codigo',''),
      'Descrição':_row.get('descricao',''),
      'Endereço':_row.get('endereco',''),
-     'Motivo':_reason,
+     'Motivo':{'FORA DO S2':'Fora do escopo do inventário',
+               'S2 NÃO COMPROVADO':'Vínculo com o estoque não confirmado'}.get(_reason,_reason),
      'Status original':_row.get('status',''),
      'Resultado original':_row.get('resultado_final',''),
      'Contagens registradas':len(_row.get('contagens') or []),
@@ -1935,7 +1936,7 @@ elif active=='Registro':
      'Execução Protheus':_row.get('ajuste_status') or 'NÃO INFORMADA',
     })
  if not st.session_state.get('_inventory_scope_ready'):
-  st.warning('ESCOPO S2 AINDA NÃO SINCRONIZADO. RELATÓRIOS OPERACIONAIS E AJUSTES BLOQUEADOS.')
+  st.warning('DADOS DE ESTOQUE AINDA NÃO SINCRONIZADOS. RELATÓRIOS OPERACIONAIS E AJUSTES BLOQUEADOS.')
  rows=[]
  for inv in _registry_docs:
   if inv.get('status')!='FECHADO':continue
@@ -2075,7 +2076,7 @@ elif active=='Registro':
   else:
    st.info('NENHUM INVENTÁRIO CORRESPONDE AOS FILTROS SELECIONADOS.')
 
-  with st.expander(f'CONTAGENS FORA DO ESCOPO S2 · AUDITORIA ({len(_scope_audit)})',expanded=False):
+  with st.expander(f'CONTAGENS FORA DO ESCOPO DO INVENTÁRIO · AUDITORIA ({len(_scope_audit)})',expanded=False):
    st.caption('REGISTROS PRESERVADOS PARA RASTREABILIDADE. NÃO INTEGRAM ACURÁCIA, DEMANDA DE CONTAGEM NEM NOVAS CARGAS PROTHEUS.')
    if _scope_audit:
     _scope_audit_frame=pd.DataFrame(_scope_audit)
@@ -2083,7 +2084,7 @@ elif active=='Registro':
     st.download_button(
      'EXPORTAR AUDITORIA DE CONTAGENS DESCONSIDERADAS',
      excel_bytes(_scope_audit_frame,'FORA ESCOPO'),
-     file_name='auditoria_inventario_fora_s2.xlsx',
+     file_name='auditoria_inventario_fora_escopo.xlsx',
      mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
      key='registry_scope_audit_download',use_container_width=True,
     )
@@ -2157,7 +2158,7 @@ elif active=='Registro':
  with tab_protheus:
   section_band('03 · PROTHEUS','AJUSTES PENDENTES DE CONFIRMAÇÃO','SOMENTE INVENTÁRIOS FECHADOS COM AJUSTE AUTORIZADO')
   if not st.session_state.get('_inventory_scope_ready'):
-   st.error('VALIDAÇÃO S2 INDISPONÍVEL. EXPORTAÇÃO/CONFIRMAÇÃO PROTHEUS BLOQUEADAS.')
+   st.error('VALIDAÇÃO DO ESTOQUE INDISPONÍVEL. EXPORTAÇÃO/CONFIRMAÇÃO PROTHEUS BLOQUEADAS.')
   elif not ajustes.empty:
    _pending_docs=sorted(ajustes['Documento'].unique().tolist(),reverse=True)
    _filter_protheus=st.selectbox(

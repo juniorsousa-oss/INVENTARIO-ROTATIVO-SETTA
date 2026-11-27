@@ -21,7 +21,8 @@ from inventory_annual_pilot import (
 
 COORD = "Coordenação"
 AUDITOR = "Auditoria"
-TITLE = "Inventário anual S2"
+TITLE = "Inventário anual de estoque"
+_LEGACY_TITLE = "Inventário anual S2"
 EXTRA = "Conferência extra"
 INDIVIDUAL = "Individual"
 PAIRS = "Em duplas"
@@ -49,7 +50,7 @@ class Reading:
 def normalize_address(value):
     text = canonical_address(value)
     if text in EXCLUDED:
-        raise ValueError("Este endereço não é apto para contagem no S2.")
+        raise ValueError("Este endereço não é apto para contagem.")
     return text
 
 
@@ -279,6 +280,11 @@ class RoomAccess:
     manager: bool = False
 
 
+def _display_title(info):
+    title = info.get("title", TITLE)
+    return TITLE if title == _LEGACY_TITLE else title
+
+
 def list_rooms(*, manager=False, path=PATH):
     with _connect(path) as conn:
         rows = conn.execute("SELECT id,state FROM annual_rooms WHERE expires>? ORDER BY rowid DESC",
@@ -292,7 +298,7 @@ def list_rooms(*, manager=False, path=PATH):
             continue
         roles = state.get("roster") or ()
         teams = info.get("teams") or {}
-        listings.append({"id": room_id, "title": info.get("title", TITLE),
+        listings.append({"id": room_id, "title": _display_title(info),
                          "closed": bool(state["closed"]), "visible": visible,
                          "can_publish": bool(state.get("free")),
                          "teams": [(role, teams.get(role, {}).get("name", role))
@@ -385,7 +391,7 @@ def view(token, *, path=PATH):
     info = state.get("info") or {}
     teams = info.get("teams") or {idx: {"name": idx, "lead": "", "assistant": ""} for idx in p.teams}
     display = teams.get(role, {}).get("name", role)
-    common = {"role": role, "closed": bool(p.closed_at), "display": display, "title": info.get("title", TITLE),
+    common = {"role": role, "closed": bool(p.closed_at), "display": display, "title": _display_title(info),
               "room_id": room_id, "free": p.free, "catalog": {k: v[0] for k, v in p._catalog.items()}}
     extras = state.get("extras") or {}
     if role == COORD:

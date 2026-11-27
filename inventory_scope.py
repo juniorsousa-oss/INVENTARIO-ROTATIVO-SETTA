@@ -54,13 +54,13 @@ def filter_s2_sources(
     possível atribuir posições a S2 sem inventar vínculo.
     """
     if analytic is None or analytic.empty or addresses is None or addresses.empty:
-        raise ValueError("FONTES ANALÍTICO/ENDEREÇO NÃO DISPONÍVEIS PARA VALIDAR O S2.")
+        raise ValueError("FONTES ANALÍTICO/ENDEREÇO NÃO DISPONÍVEIS PARA VALIDAR O ESTOQUE.")
     if len(analytic.columns) < 11 or len(addresses.columns) < 8:
-        raise ValueError("LAYOUT DAS FONTES INCOMPATÍVEL COM O INVENTÁRIO S2.")
+        raise ValueError("LAYOUT DAS FONTES INCOMPATÍVEL COM O INVENTÁRIO DE ESTOQUE.")
     warehouse_col = column(analytic, "ARMZ", "ARMAZEM", "ARMAZÉM", "COD ARMAZEM", "CODIGO ARMAZEM")
     type_col = column(analytic, "TP", "TIPO", "TIPO PRODUTO", "TIPO DE PRODUTO")
     if warehouse_col is None:
-        raise ValueError("COLUNA ARMZ NÃO LOCALIZADA NO ANALÍTICO. INVENTÁRIO S2 BLOQUEADO PARA EVITAR CONTAGEM DE OUTROS ARMAZÉNS.")
+        raise ValueError("COLUNA ARMZ NÃO LOCALIZADA NO ANALÍTICO. INVENTÁRIO BLOQUEADO ATÉ VALIDAR O ESTOQUE.")
     # Não inferir tipo apenas pela descrição ou local: bloquear PA quando TP existe.
     if type_col is None:
         raise ValueError("COLUNA TP NÃO LOCALIZADA NO ANALÍTICO. NÃO É POSSÍVEL EXCLUIR PRODUTOS ACABADOS COM SEGURANÇA.")

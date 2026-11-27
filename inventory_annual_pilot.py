@@ -103,11 +103,11 @@ class AnnualPilot:
             raise ValueError("Endereço não encontrado no cadastro do piloto. Confira o código digitado.")
         warehouse, eligible = data
         if warehouse == "INDEFINIDO":
-            raise ValueError("Não foi possível comprovar que este endereço pertence ao S2.")
+            raise ValueError("Não foi possível confirmar este endereço no estoque.")
         if warehouse != "S2":
-            raise ValueError("Este endereço pertence a outro armazém. Só o S2 pode ser contado.")
+            raise ValueError("Este endereço pertence a outro armazém e não entra na contagem do estoque.")
         if not eligible:
-            raise ValueError("Este endereço não é apto para contagem no S2.")
+            raise ValueError("Este endereço não é apto para contagem.")
 
     def eligible_addresses(self):
         if self.address_book:
