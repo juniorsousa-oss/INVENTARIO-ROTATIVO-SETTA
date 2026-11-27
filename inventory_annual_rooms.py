@@ -25,6 +25,9 @@ TITLE = "Inventário anual S2"
 EXTRA = "Conferência extra"
 INDIVIDUAL = "Individual"
 PAIRS = "Em duplas"
+MIXED = "Equipes mistas"
+PRINCIPAL = "Principal"
+ASSISTANT = "Auxiliar"
 PATH = Path(tempfile.gettempdir()) / "setta-annual-demo-v2" / "rooms.sqlite3"
 TTL = 3 * 24 * 60 * 60
 MAX_ROOMS = 200
@@ -186,20 +189,37 @@ def _encode(obj):
 
 
 def formation(people, mode, participants, title):
-    if type(people) is not int or people < 1 or mode not in (INDIVIDUAL, PAIRS):
+    if type(people) is not int or people < 1 or mode not in (INDIVIDUAL, PAIRS, MIXED):
         raise ValueError("Informe a quantidade de pessoas e o modo de contagem.")
-    names = [_label(line, "o nome de cada participante") for line in participants.splitlines() if line.strip()]
-    if len(names) != people:
-        raise ValueError(f"Informe um nome por linha. Quantidade esperada: {people}; informada: {len(names)}.")
+    if mode == MIXED:
+        if not isinstance(participants, (list, tuple)) or len(participants) != people:
+            raise ValueError("Preencha o nome e a classe de todos os participantes.")
+        names, principals, assistants = [], [], []
+        for row in participants:
+            if not isinstance(row, dict) or row.get("Classe") not in (PRINCIPAL, ASSISTANT):
+                raise ValueError("Marque Principal ou Auxiliar para cada participante.")
+            name = _label(row.get("Participante"), "o nome de cada participante")
+            names.append(name)
+            (principals if row["Classe"] == PRINCIPAL else assistants).append(name)
+        if len(assistants) > len(principals):
+            missing = len(assistants) - len(principals)
+            raise ValueError(f"Falta(m) {missing} principal(is) para os auxiliares.")
+        pairs = [(lead, assistants[i] if i < len(assistants) else "")
+                 for i, lead in enumerate(principals)]
+    else:
+        if not isinstance(participants, str):
+            raise ValueError("Informe um participante por linha.")
+        names = [_label(line, "o nome de cada participante") for line in participants.splitlines() if line.strip()]
+        if len(names) != people:
+            raise ValueError(f"Informe um nome por linha. Quantidade esperada: {people}; informada: {len(names)}.")
+        size = 1 if mode == INDIVIDUAL else 2
+        pairs = [(names[i], names[i+1] if size == 2 and i+1 < people else "")
+                 for i in range(0, people, size)]
     if len(set(n.casefold() for n in names)) != people:
         raise ValueError("Cada participante só pode aparecer uma vez.")
-    size = 1 if mode == INDIVIDUAL else 2
-    teams = {}
-    for i in range(0, people, size):
-        lead = names[i]
-        assistant = names[i+1] if size == 2 and i+1 < people else ""
-        teams[f"EQ-{i//size+1:06}"] = {"name": f"{lead} / {assistant}" if assistant else lead,
-                                     "lead": lead, "assistant": assistant}
+    teams = {f"EQ-{i:06}": {"name": f"{lead} / {assistant}" if assistant else lead,
+                            "lead": lead, "assistant": assistant}
+             for i, (lead, assistant) in enumerate(pairs, start=1)}
     return {"title": _label(title, "o nome do inventário"), "teams": teams, "mode": mode}
 
 

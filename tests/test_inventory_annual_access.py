@@ -92,3 +92,57 @@ class AnnualAccessTests(unittest.TestCase):
                                 for f in manager.dataframe if "Descrição" in f.value))
             click(manager, "Retirar da visão padrão")
             self.assertTrue(guest.run().info)
+
+
+class MixedTeamsTests(unittest.TestCase):
+    @staticmethod
+    def participant(name, role=r.PRINCIPAL):
+        return {"Participante": name, "Classe": role}
+
+    def test_even_total_can_make_a_pair_and_two_solos(self):
+        rows = [self.participant("Aux 1", r.ASSISTANT), self.participant("Principal 1"),
+                self.participant("Principal 2"), self.participant("Principal 3")]
+        info = r.formation(4, r.MIXED, rows, "Teste")
+        self.assertEqual([x["name"] for x in info["teams"].values()],
+                         ["Principal 1 / Aux 1", "Principal 2", "Principal 3"])
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / "test.sqlite3"
+            token = r.create_room({}, True, people=4, mode=r.MIXED, participants=rows, path=path)
+            rid = r.view(token, path=path)["room_id"]
+            r.action(r.RoomAccess(rid, r.COORD, True), "publish", path=path)
+            listing = r.list_rooms(path=path)[0]
+            self.assertEqual([name for _, name in listing["teams"]],
+                             ["Principal 1 / Aux 1", "Principal 2", "Principal 3"])
+
+    def test_odd_total_and_no_fixed_limit(self):
+        rows = [self.participant(f"P{i}") for i in range(19)]
+        rows += [self.participant(f"A{i}", r.ASSISTANT) for i in range(12)]
+        teams = list(r.formation(31, r.MIXED, rows, "Teste")["teams"].values())
+        self.assertEqual(len(teams), 19)
+        self.assertEqual([pair["assistant"] for pair in teams[:12]], [f"A{i}" for i in range(12)])
+        self.assertTrue(all(not pair["assistant"] for pair in teams[12:]))
+
+    def test_invalid_mixed_formation(self):
+        with self.assertRaisesRegex(ValueError, "principal"):
+            r.formation(3, r.MIXED, [self.participant("P"), self.participant("A", r.ASSISTANT),
+                                     self.participant("B", r.ASSISTANT)], "Teste")
+        with self.assertRaisesRegex(ValueError, "uma vez"):
+            r.formation(2, r.MIXED, [self.participant("P"), self.participant("p", r.ASSISTANT)], "Teste")
+        with self.assertRaisesRegex(ValueError, "classe"):
+            r.formation(2, r.MIXED, [self.participant("P")], "Teste")
+        with self.assertRaisesRegex(ValueError, "Principal ou Auxiliar"):
+            r.formation(1, r.MIXED, [self.participant("P", "Outra")], "Teste")
+        with self.assertRaisesRegex(ValueError, "nome de cada"):
+            r.formation(1, r.MIXED, [self.participant("")], "Teste")
+
+    def test_manager_can_render_mixed_entry_and_correct_missing_names(self):
+        entry = "import streamlit as st\nfrom inventory_annual_ui import _setup\n_setup(st)"
+        app = AppTest.from_string(entry).run()
+        app = app.radio[0].set_value(r.MIXED).run()
+        app = app.number_input[0].set_value(4).run()
+        self.assertFalse(app.exception)
+        self.assertEqual(app.dataframe[0].value.shape, (4, 2))
+        self.assertEqual(app.dataframe[0].value["Classe"].tolist(), [r.PRINCIPAL]*4)
+        app = app.button[0].click().run()
+        self.assertFalse(app.exception)
+        self.assertIn("nome de cada participante", app.error[0].value)
