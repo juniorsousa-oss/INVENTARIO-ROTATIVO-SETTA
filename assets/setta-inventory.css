@@ -10,6 +10,8 @@
 .stApp,.stApp input,.stApp button,.stApp textarea,.stApp [data-testid="stMarkdownContainer"] :is(h1,h2,h3,h4,p){font-family:Outfit,system-ui,sans-serif}
 [data-testid="stAppViewContainer"],[data-testid="stMain"]{background:var(--inv-bg)!important}
 [data-testid="stMain"]{min-width:0;scroll-padding-top:calc(var(--inv-top) + 12px)}
+[data-testid="InputInstructions"] > [data-setta-keyboard-hint]{display:none!important}
+[data-testid="InputInstructions"] > [data-setta-keyboard-hint] + span::before{content:none!important}
 [data-testid="stMainBlockContainer"]{width:100%;max-width:none!important;padding:var(--inv-top) 28px 24px!important}
 [data-testid="stHeader"],[data-testid="stToolbar"],[data-testid="stDecoration"],[data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"]{display:none!important}
 [data-testid="stElementContainer"]:has(#setta-inv-shell-style),.setta-shell-marker{display:none!important}

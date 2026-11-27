@@ -9,6 +9,36 @@
   let pending = null;
   let frame = 0;
 
+  // Remove somente as instruções de teclado, sem alterar os eventos dos
+  // campos nem os contadores de caracteres que o Streamlit exibe junto.
+  const inputHint = '[data-testid="InputInstructions"]';
+  const keyboardHint = /^Press (?:⌘\+|Ctrl\+)?Enter to (?:apply|submit(?: form)?)$/;
+  function updateInputHint(group) {
+    for (const child of group.children) {
+      child.toggleAttribute('data-setta-keyboard-hint', keyboardHint.test(child.textContent.trim()));
+    }
+  }
+  function inspectInputHints(node) {
+    const element = node instanceof Element ? node : node.parentElement;
+    if (!element) return;
+    const group = element.closest(inputHint);
+    if (group) updateInputHint(group);
+    if (node instanceof Element) node.querySelectorAll(inputHint).forEach(updateInputHint);
+  }
+  document.querySelectorAll(inputHint).forEach(updateInputHint);
+  new MutationObserver(records => {
+    for (const record of records) {
+      if (record.type === 'characterData') inspectInputHints(record.target);
+      else {
+        const group = record.target instanceof Element && record.target.closest(inputHint);
+        if (group) updateInputHint(group);
+        for (const node of record.addedNodes) {
+          if (node instanceof Element) inspectInputHints(node);
+        }
+      }
+    }
+  }).observe(document.body, {subtree: true, childList: true, characterData: true});
+
   function finish() {
     pending = null;
     delete root.dataset.settaInventoryNavigating;
