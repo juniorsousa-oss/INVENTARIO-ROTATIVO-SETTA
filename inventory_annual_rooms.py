@@ -510,7 +510,7 @@ def view(token, *, path=PATH):
     own = {task_key(stage, a, c, role): state["drafts"].get(task_key(stage, a, c, role), [])
            for stage, pairs in tasks.items() for a, c in pairs}
     return {**common, "tasks": tasks, "drafts": own,
-            "address_options": p.eligible_addresses() if p.address_book and p.free and role in p.teams else ()}
+            "address_options": p.eligible_addresses() if p.free and role in p.teams else ()}
 
 
 def draft_version(lines):
@@ -533,6 +533,8 @@ def action(token, event, stage="", address="", product="", *, item=None, repeat=
                 raise ValueError("Somente a equipe de contagem pode iniciar um endereço.")
             address = normalize_address(address)
             p.validate_address(address)
+            if address not in p.eligible_addresses():
+                raise ValueError("Endereço não encontrado no cadastro deste inventário.")
             owner = p.assignment.get(address)
             if owner is None:
                 p.assignment[address] = role
