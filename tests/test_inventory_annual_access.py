@@ -132,6 +132,42 @@ render(st, manager=manager, sign_in=None if manager else lambda: st.text_input("
             self.assertFalse(app.exception)
             self.assertEqual(app.segmented_control[0].value, "Andamento")
 
+    def test_operator_steps_keep_drafts_and_require_review(self):
+        r.action(self.gestor, "publish", path=self.path)
+        entry = "import streamlit as st\nfrom inventory_annual_ui import render\nrender(st)"
+        with patch.object(r, "list_rooms", partial(r.list_rooms, path=self.path)), \
+             patch.object(r, "view", partial(r.view, path=self.path)), \
+             patch.object(r, "action", partial(r.action, path=self.path)), \
+             patch("inventory_annual_ui.scan_qr", return_value=None):
+            def click(app, label):
+                [button] = [b for b in app.button if b.label == label]
+                app = button.click().run()
+                self.assertFalse(app.exception)
+                return app
+
+            app = click(AppTest.from_string(entry).run(), "Equipe A")
+            self.assertFalse(app.segmented_control)
+            app = app.selectbox[0].set_value("A-01").run()
+            app = click(app, "Abrir endereço")
+            self.assertNotIn("Atualizar fila", [b.label for b in app.button])
+            self.assertIn("Revisar e enviar", [e.label for e in app.expander])
+            app = app.radio[0].set_value("Manual").run()
+            for text in app.text_input:
+                text.set_value({"Código do produto":"00000001", "Lote":"000101", "Quantidade contada":"3"}[text.label])
+            app = click(app, "Adicionar lançamento manual")
+            self.assertIn("Revisar rascunho · 1 lançamento salvo", [e.label for e in app.expander])
+            app = click(app, "Sair do endereço sem enviar")
+            self.assertIn("Retomar rascunho (1)", [e.label for e in app.expander])
+            app = click(app, "Retomar A-01")
+            app = click(app, "Enviar para conferência")
+            self.assertTrue(app.error)
+            for check in app.checkbox:
+                if check.label.startswith("Conferi os lançamentos"):
+                    check.check()
+            app = click(app, "Enviar para conferência")
+            self.assertTrue(any("A-01 enviado" in x.value for x in app.success))
+            self.assertFalse(r.view(self.guest, path=self.path)["drafts"])
+
     def test_ui_access_does_not_prompt_for_team_code(self):
         def click(app, label):
             [button] = [b for b in app.button if b.label == label]

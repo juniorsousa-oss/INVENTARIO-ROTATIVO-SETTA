@@ -277,7 +277,7 @@ def _camera_capture(st, token, stage, address, code, ident, catalog):
         return
     st.success("QR lido. Confira os dados antes de adicionar ao rascunho.")
     st.text(f"Produto: {item.product} · {catalog[item.product]}\nLote: {item.lot}\nQuantidade: {item.quantity}")
-    repeat = st.checkbox("Confirmo que é outra etiqueta física, se a leitura da câmera for igual",
+    repeat = st.checkbox("É outra etiqueta física com o mesmo código",
                          key="ann_camera_repeat_" + scope)
     add, retry = st.columns(2)
     if add.button("Adicionar QR lido", type="primary", key="ann_camera_add_" + scope):
@@ -293,33 +293,36 @@ def _camera_capture(st, token, stage, address, code, ident, catalog):
 def _capture(st, token, stage, address, code, lines, catalog):
     st.markdown(f"**Endereço {address}**" + (f" · Produto **{code}**" if code else ""))
     ident = f"{stage}_{address}_{code}"
-    with st.container():
-        _camera_capture(st, token, stage, address, code, ident, catalog)
-    with st.form("ann_qr_" + ident, clear_on_submit=True):
-        payload = st.text_input("Ler ou colar o QR da etiqueta", max_chars=180,
-                                placeholder="00000001,000101,3")
-        repeat = st.checkbox("Confirmo que é outra etiqueta física, se a leitura for igual")
-        if st.form_submit_button("Adicionar leitura", type="primary"):
-            def register():
-                item = room.parse_demo_label(payload, address, catalog=catalog)
-                room.action(token, "add", stage, address, code, item=item, repeat=repeat)
-            _apply(st, register)
-    with st.expander("Etiqueta antiga ou lançamento manual"):
-        with st.form("ann_manual_" + ident, clear_on_submit=True, enter_to_submit=False):
-            raw_product = st.text_input("Código do produto", max_chars=32)
-            lot = st.text_input("Lote", max_chars=32)
-            amount = st.text_input("Quantidade contada", max_chars=18)
-            manual_repeat = st.checkbox("Confirmo que é outro volume, se o lançamento for igual")
-            if st.form_submit_button("Adicionar lançamento manual"):
-                def manual():
-                    item = room.reading(raw_product, address, lot, amount, catalog=catalog)
-                    room.action(token, "add", stage, address, code, item=item, repeat=manual_repeat)
-                _apply(st, manual)
+    _camera_capture(st, token, stage, address, code, ident, catalog)
+    with st.expander("Outra forma de lançar"):
+        mode = st.radio("Forma de lançamento", ["Digitar QR", "Manual"], horizontal=True,
+                        key="ann_entry_mode_" + ident, label_visibility="collapsed")
+        if mode == "Digitar QR":
+            with st.form("ann_qr_" + ident, clear_on_submit=True):
+                payload = st.text_input("Ler ou colar o QR da etiqueta", max_chars=180,
+                                        placeholder="00000001,000101,3")
+                repeat = st.checkbox("É outra etiqueta física com o mesmo código")
+                if st.form_submit_button("Adicionar leitura", type="primary"):
+                    def register():
+                        item = room.parse_demo_label(payload, address, catalog=catalog)
+                        room.action(token, "add", stage, address, code, item=item, repeat=repeat)
+                    _apply(st, register)
+        else:
+            with st.form("ann_manual_" + ident, clear_on_submit=True, enter_to_submit=False):
+                raw_product = st.text_input("Código do produto", value=code, max_chars=32, disabled=bool(code))
+                lot = st.text_input("Lote", max_chars=32)
+                amount = st.text_input("Quantidade contada", max_chars=18)
+                manual_repeat = st.checkbox("É outro volume com os mesmos dados")
+                if st.form_submit_button("Adicionar lançamento manual"):
+                    def manual():
+                        item = room.reading(raw_product, address, lot, amount, catalog=catalog)
+                        room.action(token, "add", stage, address, code, item=item, repeat=manual_repeat)
+                    _apply(st, manual)
     if lines:
-        st.caption(f"Rascunho salvo · {len(lines)} lançamento(s)")
-        st.dataframe([dict(row, Descrição=catalog.get(row["Produto"], ""), Quantidade=float(row["Quantidade"])) for row in room.grouped(lines)],
-                     hide_index=True, width="stretch")
-        with st.expander("Corrigir lançamento"):
+        label = "1 lançamento salvo" if len(lines) == 1 else f"{len(lines)} lançamentos salvos"
+        with st.expander(f"Revisar rascunho · {label}"):
+            st.dataframe([dict(row, Descrição=catalog.get(row["Produto"], ""), Quantidade=float(row["Quantidade"]))
+                          for row in room.grouped(lines)], hide_index=True, width="stretch")
             labels = {r["id"]: f"{i}. {r['product']} · lote {r['lot']} · {r['quantity']}"
                       for i, r in enumerate(lines, start=1)}
             line_id = st.selectbox("Leitura para remover", tuple(labels), format_func=labels.get,
@@ -337,23 +340,23 @@ def _capture(st, token, stage, address, code, lines, catalog):
                     _apply(st, edit)
             if st.button("Remover leitura selecionada", key="ann_del_" + ident):
                 _apply(st, room.action, token, "remove", stage, address, code, line_id=line_id, expected=selected)
-    with st.form("ann_deliver_" + ident, enter_to_submit=False):
-        empty = st.checkbox("Endereço conferido e vazio" if stage in (FIRST, room.EXTRA) else "Produto não encontrado")
-        complete = st.checkbox("Conferi os lançamentos. Após enviar, não poderei editar." if stage == FIRST else "Conferi toda a tarefa")
-        note = st.text_area("Justificativa da auditoria", max_chars=400) if stage == AUDIT else ""
-        if st.form_submit_button({FIRST:"Enviar para conferência", SECOND:"Confirmar 2ª contagem",
-                                  AUDIT:"Validar auditoria", room.EXTRA:"Enviar conferência extra"}[stage]):
-            def submit():
-                room.action(token, "submit", stage, address, code,
-                            empty=empty, complete=complete, note=note, expected=room.draft_version(lines))
-                if stage == FIRST:
-                    st.session_state["_annual_last_sent_v3"] = (token, address)
-                if stage in (FIRST, room.EXTRA):
-                    st.session_state.pop("_annual_free_active", None)
-                if stage == room.EXTRA:
-                    st.session_state["_annual_extra_sent"] = (token, address)
-            _apply(st, submit)
-
+    with st.expander("Revisar e enviar"):
+        with st.form("ann_deliver_" + ident, enter_to_submit=False):
+            empty = st.checkbox("Endereço conferido e vazio" if stage in (FIRST, room.EXTRA) else "Produto não encontrado")
+            complete = st.checkbox("Conferi os lançamentos. Após enviar, não poderei editar." if stage == FIRST else "Conferi toda a tarefa")
+            note = st.text_area("Justificativa da auditoria", max_chars=400) if stage == AUDIT else ""
+            if st.form_submit_button({FIRST:"Enviar para conferência", SECOND:"Confirmar 2ª contagem",
+                                      AUDIT:"Validar auditoria", room.EXTRA:"Enviar conferência extra"}[stage]):
+                def submit():
+                    room.action(token, "submit", stage, address, code,
+                                empty=empty, complete=complete, note=note, expected=room.draft_version(lines))
+                    if stage == FIRST:
+                        st.session_state["_annual_last_sent_v3"] = (token, address)
+                    if stage in (FIRST, room.EXTRA):
+                        st.session_state.pop("_annual_free_active", None)
+                    if stage == room.EXTRA:
+                        st.session_state["_annual_extra_sent"] = (token, address)
+                _apply(st, submit)
 
 def _free_count(st, token, current):
     active = st.session_state.get("_annual_free_active")
@@ -391,6 +394,16 @@ def _free_count(st, token, current):
                 st.session_state.pop(key, None)
             st.rerun()
 
+    conflict = st.session_state.get("_annual_address_conflict")
+    if conflict and conflict[0] == token:
+        _, address, owner, message = conflict
+        st.warning(f"{address}: {message} A conferência extra fica fora do total oficial.")
+        if st.button("Confirmar conferência extra"):
+            open_at(address, owner)
+        if st.button("Cancelar e escolher outro endereço"):
+            st.session_state.pop("_annual_address_conflict", None)
+            st.rerun()
+        return
     options = current["address_options"]
     if options:
         address = st.selectbox("Buscar endereço de estoque", options, index=None, filter_mode="contains",
@@ -403,22 +416,13 @@ def _free_count(st, token, current):
             address = st.text_input("Informe o endereço de estoque", max_chars=60)
             if st.form_submit_button("Abrir endereço", type="primary"):
                 open_at(address)
-    conflict = st.session_state.get("_annual_address_conflict")
-    if conflict and conflict[0] == token:
-        _, address, owner, message = conflict
-        st.warning(f"{address}: {message} A conferência extra fica fora do total oficial.")
-        if st.button("Confirmar conferência extra"):
-            open_at(address, owner)
-        if st.button("Cancelar e escolher outro endereço"):
-            st.session_state.pop("_annual_address_conflict", None)
-            st.rerun()
     saved = [(stage, a) for stage in (FIRST, room.EXTRA) for a, _ in current["tasks"].get(stage, [])]
     if saved:
-        st.markdown("**Meus endereços em rascunho**")
-        for stage, a in saved:
-            if st.button(f"Retomar {a}" + (" · Extra" if stage == room.EXTRA else ""),
-                         key=f"ann_resume_{stage}_{a}"):
-                open_at(a)
+        with st.expander(f"Retomar rascunho ({len(saved)})"):
+            for stage, a in saved:
+                if st.button(f"Retomar {a}" + (" · Extra" if stage == room.EXTRA else ""),
+                             key=f"ann_resume_{stage}_{a}"):
+                    open_at(a)
 
 
 def _worker_stage(st, token, current, stage):
@@ -451,11 +455,8 @@ def _worker_stage(st, token, current, stage):
             st.session_state.pop("_ann_active_first", None)
             st.rerun()
     elif stage == SECOND:
-        addresses = sorted({a for a, _ in tasks})
-        address = st.selectbox("Endereço para recontar", addresses,
-                               format_func=lambda a: f"{a} · {sum(x == a for x, _ in tasks)} produto(s)")
-        products = [c for a, c in tasks if a == address]
-        code = st.selectbox("Produto pendente de recontagem", products, key="ann_second_code_" + address)
+        address, code = st.selectbox("O que recontar", tasks,
+            format_func=lambda pair: " · ".join(pair), key="ann_second_task")
     else:
         address, code = st.selectbox("Posição para auditoria", tasks,
             format_func=lambda pair: " · ".join(pair), key="ann_audit_task")
@@ -468,11 +469,18 @@ def _worker(st, token, current):
         return
     tasksets = current["tasks"]
     if FIRST in tasksets:
-        first, second = st.tabs(["Contagem", "Recontagem"])
-        with first:
-            _worker_stage(st, token, current, FIRST)
-        with second:
-            _worker_stage(st, token, current, SECOND)
+        active = st.session_state.get("_annual_free_active")
+        counting = bool(active and active[0] == token) or bool(st.session_state.get("_ann_active_first"))
+        if not counting and tasksets.get(SECOND):
+            step = st.segmented_control("Etapa", ["Contagem", "Recontagem"], default="Contagem",
+                                        required=True, label_visibility="collapsed",
+                                        key=f'ann_worker_stage_{current["room_id"]}_{current["role"]}')
+            if step == "Recontagem":
+                _worker_stage(st, token, current, SECOND)
+                return
+        _worker_stage(st, token, current, FIRST)
+        if not counting:
+            st.button("Atualizar fila", key="ann_update")
     elif SECOND in tasksets:
         st.subheader("Recontagem")
         _worker_stage(st, token, current, SECOND)
@@ -532,7 +540,8 @@ def render(st, *, manager=False, sign_in=None, sign_out=None):
             else:
                 st.text("Acesso: " + current["display"])
                 st.caption(current["title"])
-                st.button("Atualizar fila", key="ann_update", help="Busca alterações salvas pelas outras equipes.")
+                if current["role"] == room.AUDITOR or FIRST not in current["tasks"]:
+                    st.button("Atualizar fila", key="ann_update")
                 _worker(st, token, current)
             return
     else:
