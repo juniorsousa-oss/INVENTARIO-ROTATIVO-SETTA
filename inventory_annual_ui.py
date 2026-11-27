@@ -1,4 +1,5 @@
 """Interface do piloto anual compartilhado, exclusivamente com dados fictícios."""
+from functools import partial
 from hashlib import sha256
 
 from inventory_annual_camera import scan_qr
@@ -191,18 +192,12 @@ def _coordinator_management(st, token, current):
     if pilot.free:
         if not pilot.closed_at and current["visible"] and st.button("Retirar da visão padrão"):
             _apply(st, room.action, token, "hide")
-        with st.expander("Cópia de segurança"):
-            if st.button("Preparar cópia", key="annual_prepare_backup"):
-                try:
-                    data = room.backup_room(token)
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    st.download_button(
-                        "Baixar cópia do piloto", data=data,
-                        file_name=f'inventario-anual-{current["room_id"]}.json',
-                        mime="application/json", on_click="ignore", key="annual_download_backup",
-                    )
+        st.download_button(
+            "Baixar cópia do piloto", data=partial(room.backup_room, token),
+            file_name=f'inventario-anual-{current["room_id"]}.json',
+            mime="application/json", on_click="ignore", key="annual_download_backup",
+            icon=":material/download:",
+        )
 
 
 def _coordinator_result(st, current):
