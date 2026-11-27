@@ -1,5 +1,12 @@
 /* Shell Setta: o topo pertence à viewport, não à coluna que rola. */
 :root{--inv-bg:#f0f0f0;--inv-ink:#333;--inv-mute:#525252;--inv-border:#e1e1e1;--inv-accent:#ffbb00;--inv-top:58px;--inv-nav:220px;--inv-drawer-time:220ms;--inv-drawer-ease:cubic-bezier(.2,.7,.2,1)}
+/* Informações no amarelo Setta, sem alterar avisos, erros ou sucessos. */
+.stApp [data-testid="stAlertContainer"]:has(> [data-testid="stAlertContentInfo"]){
+ background-color:#fff4cf!important;
+ color:var(--inv-ink)!important;
+ border-inline-start:3px solid var(--inv-accent);
+}
+.stApp [data-testid="stAlertContentInfo"] a{color:inherit;text-decoration:underline}
 .stApp,.stApp input,.stApp button,.stApp textarea,.stApp [data-testid="stMarkdownContainer"] :is(h1,h2,h3,h4,p){font-family:Outfit,system-ui,sans-serif}
 [data-testid="stAppViewContainer"],[data-testid="stMain"]{background:var(--inv-bg)!important}
 [data-testid="stMain"]{min-width:0;scroll-padding-top:calc(var(--inv-top) + 12px)}
