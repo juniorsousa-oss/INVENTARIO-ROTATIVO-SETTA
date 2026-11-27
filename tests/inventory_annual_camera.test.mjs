@@ -6,7 +6,7 @@ import vm from "node:vm";
 const scanner = readFileSync(new URL("../assets/annual-camera.js", import.meta.url), "utf8");
 const vendored = readFileSync(new URL("../assets/jsqr-1.4.0.js", import.meta.url), "utf8");
 
-function fixture(getUserMedia, role = "00000001,000101,3") {
+function fixture(getUserMedia, role = "00000001,000101,3", overrides = {}) {
     const open = new EventTarget(), close = new EventTarget(), resume = new EventTarget();
     const video = {readyState: 2, videoWidth: 32, videoHeight: 32, play: async () => {}, pause: () => {}};
     const status = {textContent: ""};
@@ -19,6 +19,7 @@ function fixture(getUserMedia, role = "00000001,000101,3") {
         navigator: {mediaDevices: {getUserMedia}}, window, document: doc, setTimeout, clearTimeout,
         decodeQR: () => ({data: role}),
         SettaBarcode: {decodeBarcode: () => null},
+        ...overrides,
     });
     const dispose = init({parentElement:parent, setTriggerValue: (...args) => outputs.push(args)});
     return {open, close, resume, video, status, outputs, doc, dispose};
@@ -107,4 +108,25 @@ test("bundled reader decodes a real EAN-13 image without network calls", () => {
        data[i]=data[i+1]=data[i+2]=v; data[i+3]=255;
     }
     assert.equal(decode({data,width,height}), ean);
+});
+
+test("undecodable live frames keep the camera active and show guidance", async () => {
+    const tracks = trackFixture(), ticks = [];
+    let time = 1000;
+    const fx = fixture(async () => tracks.stream, null, {
+        Date: {now: () => time},
+        setTimeout: fn => { ticks.push(fn); },
+    });
+    fx.video.videoWidth = 1280;
+    fx.video.videoHeight = 720;
+    click(fx.open);
+    await flush();
+    for (let i = 0; i < 4; i++) {
+        time += 1600;
+        ticks.shift()();
+    }
+    assert.match(fx.status.textContent, /Ainda não li a etiqueta/);
+    assert.equal(tracks.stops, 0);
+    assert.deepEqual(fx.outputs, []);
+    fx.dispose();
 });

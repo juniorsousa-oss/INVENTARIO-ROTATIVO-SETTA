@@ -34,10 +34,10 @@ export default function ({parentElement, setTriggerValue}) {
         else context.drawImage(source, 0, 0, canvas.width, canvas.height);
         const frame = context.getImageData(0, 0, canvas.width, canvas.height);
         return decodeQR(frame.data, frame.width, frame.height, {inversionAttempts: "attemptBoth"})?.data
-            || (!crop && SettaBarcode.decodeBarcode(frame));
+            || (crop ? null : SettaBarcode.decodeBarcode(frame));
     }
     function emit(raw) {
-        const value = raw?.trim();
+        const value = typeof raw === "string" ? raw.trim() : "";
         if (!value) return false;
         if (value.length > 180 || !(value.includes(",") || /^[a-z0-9][a-z0-9_.-]{0,31}$/i.test(value))) {
             incompatible = true;
