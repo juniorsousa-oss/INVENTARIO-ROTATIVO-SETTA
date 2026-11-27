@@ -6,8 +6,6 @@ from inventory_annual_pilot import AUDIT, FIRST, SECOND, ELIGIBLE, VALIDATED
 import inventory_annual_rooms as room
 
 STATE = "_annual_inventory_pilot_code_v2"
-MEMBERSHIPS = "_annual_memberships_v3"
-OPEN = "_annual_open_team_v3"
 PREP = "_annual_prepare_teams_v3"
 
 
@@ -18,24 +16,6 @@ def _apply(st, fn, *args, **kwargs):
         st.error(str(exc))
     else:
         st.rerun()
-
-
-def _add_code(st, manager):
-    with st.form("ann_join", clear_on_submit=True):
-        access = st.text_input("Código de acesso do piloto", type="password", max_chars=45)
-        if st.form_submit_button("Entrar no piloto", type="primary"):
-            def enter():
-                token = access.strip()
-                profile = room.view(token)
-                if profile["role"] == room.COORD and not manager:
-                    raise ValueError("A Coordenação exige login de Gestor no Inventário.")
-                if profile["role"] != room.COORD:
-                    codes = st.session_state.setdefault(MEMBERSHIPS, [])
-                    if token not in codes:
-                        codes.append(token)
-                st.session_state[STATE] = token
-                st.session_state.pop(OPEN, None)
-            _apply(st, enter)
 
 
 def _setup(st):
@@ -70,21 +50,11 @@ def _setup(st):
         locked = st.checkbox("Confirmo o bloqueio simulado do S2")
         if st.form_submit_button("Iniciar piloto", type="primary"):
             def start():
-                st.session_state[STATE] = room.create_room({}, locked, people=plan["people"], title=plan["title"],
+                token = room.create_room({}, locked, people=plan["people"], title=plan["title"],
                     mode=plan["mode"], participants=plan["participants"])
+                st.session_state[STATE] = room.RoomAccess(room.view(token)["room_id"], room.COORD, True)
                 st.session_state.pop(PREP, None)
             _apply(st, start)
-
-
-def _entry(st, manager):
-    if not manager:
-        _add_code(st, manager=False)
-        return
-    join, create = st.tabs(["Acessar piloto", "Criar piloto"])
-    with join:
-        _add_code(st, manager=True)
-    with create:
-        _setup(st)
 
 
 def _coordinator(st, token, current):
@@ -98,11 +68,17 @@ def _coordinator(st, token, current):
         st.dataframe([{"Equipe": data["name"], "Cabeça de chave": data["lead"], "Auxiliar": data["assistant"],
                        "Endereços": ", ".join(a for a, owner in sorted(pilot.assignment.items()) if owner == idx) or "—"}
                       for idx, data in current["teams"].items()], hide_index=True)
-    with st.expander("Códigos de acesso do piloto"):
-        st.caption("Cada código acessa apenas um papel. Compartilhe apenas o código da função correspondente.")
-        for role, secret in {room.COORD: token, **room.worker_codes(token, pilot.teams)}.items():
-            st.text(current["teams"].get(role, {}).get("name", role))
-            st.code(secret, language=None)
+    if pilot.free and not pilot.closed_at:
+        if current["visible"]:
+            st.caption("Visível sem login para quem puder acessar o app.")
+            if st.button("Retirar da visão padrão"):
+                _apply(st, room.action, token, "hide")
+        else:
+            st.caption("Só a gestão vê este piloto até a liberação. Use nomes fictícios de equipes e nunca inclua dados internos aqui.")
+            if st.button("Liberar na visão padrão"):
+                _apply(st, room.action, token, "publish")
+    if not pilot.closed_at and st.button("Abrir auditoria"):
+        _select(st, room.RoomAccess(current["room_id"], room.AUDITOR, True))
     st.subheader("Fila de pendências")
     queue = current["queue"]
     if queue:
@@ -117,7 +93,7 @@ def _coordinator(st, token, current):
                            "Situação": "Enviada" if status == "submitted" else "Em contagem"}
                            for a, t, status, _ in current["extras"]], hide_index=True)
             details = [{"Endereço": a, "Equipe": current["teams"][t]["name"],
-                        **dict(row, Quantidade=float(row["Quantidade"]))}
+                        **dict(row, Descrição=catalog.get(row["Produto"], ""), Quantidade=float(row["Quantidade"]))}
                        for a, t, status, rows in current["extras"] if status == "submitted" for row in rows]
             if details:
                 st.dataframe(details, hide_index=True)
@@ -174,7 +150,7 @@ def _coordinator(st, token, current):
             st.dataframe(evidence, hide_index=True)
 
 
-def _camera_capture(st, token, stage, address, code, ident):
+def _camera_capture(st, token, stage, address, code, ident, catalog):
     scope = sha256(f"{token}:{ident}".encode()).hexdigest()[:24]
     state_key = "_annual_camera_preview"
     preview = st.session_state.get(state_key)
@@ -186,7 +162,7 @@ def _camera_capture(st, token, stage, address, code, ident):
         st.session_state[state_key] = (scope, payload)
         st.rerun()
     try:
-        item = room.parse_demo_label(payload, address)
+        item = room.parse_demo_label(payload, address, catalog=catalog)
         if code and item.product != code:
             raise ValueError("A etiqueta não pertence ao produto desta tarefa.")
     except ValueError as exc:
@@ -196,7 +172,7 @@ def _camera_capture(st, token, stage, address, code, ident):
             st.rerun()
         return
     st.success("QR lido. Confira os dados antes de adicionar ao rascunho.")
-    st.markdown(f"**Produto:** {item.product}  \n**Lote:** {item.lot}  \n**Quantidade:** {item.quantity}")
+    st.text(f"Produto: {item.product} · {catalog[item.product]}\nLote: {item.lot}\nQuantidade: {item.quantity}")
     repeat = st.checkbox("Confirmo que é outra etiqueta física, se a leitura da câmera for igual",
                          key="ann_camera_repeat_" + scope)
     add, retry = st.columns(2)
@@ -210,19 +186,19 @@ def _camera_capture(st, token, stage, address, code, ident):
         st.rerun()
 
 
-def _capture(st, token, stage, address, code, lines):
+def _capture(st, token, stage, address, code, lines, catalog):
     st.markdown(f"**Endereço {address}**" + (f" · Produto **{code}**" if code else ""))
     st.caption("O endereço vem da tarefa; o QR atual contém produto, lote e quantidade.")
     ident = f"{stage}_{address}_{code}"
     with st.container():
-        _camera_capture(st, token, stage, address, code, ident)
+        _camera_capture(st, token, stage, address, code, ident, catalog)
     with st.form("ann_qr_" + ident, clear_on_submit=True):
         payload = st.text_input("Ler ou colar o QR da etiqueta", max_chars=180,
                                 placeholder="00000001,000101,3")
         repeat = st.checkbox("Confirmo que é outra etiqueta física, se a leitura for igual")
         if st.form_submit_button("Adicionar leitura", type="primary"):
             def register():
-                item = room.parse_demo_label(payload, address)
+                item = room.parse_demo_label(payload, address, catalog=catalog)
                 room.action(token, "add", stage, address, code, item=item, repeat=repeat)
             _apply(st, register)
     with st.expander("Etiqueta antiga ou lançamento manual"):
@@ -234,12 +210,12 @@ def _capture(st, token, stage, address, code, lines):
             manual_repeat = st.checkbox("Confirmo que é outro volume, se o lançamento for igual")
             if st.form_submit_button("Adicionar lançamento manual"):
                 def manual():
-                    item = room.reading(raw_product, address, lot, amount)
+                    item = room.reading(raw_product, address, lot, amount, catalog=catalog)
                     room.action(token, "add", stage, address, code, item=item, repeat=manual_repeat)
                 _apply(st, manual)
     if lines:
         st.caption(f"Rascunho salvo · {len(lines)} lançamento(s)")
-        st.dataframe([dict(row, Quantidade=float(row["Quantidade"])) for row in room.grouped(lines)],
+        st.dataframe([dict(row, Descrição=catalog.get(row["Produto"], ""), Quantidade=float(row["Quantidade"])) for row in room.grouped(lines)],
                      hide_index=True, width="stretch")
         with st.expander("Corrigir lançamento"):
             labels = {r["id"]: f"{i}. {r['product']} · lote {r['lot']} · {r['quantity']}"
@@ -254,7 +230,7 @@ def _capture(st, token, stage, address, code, lines):
                 updated_qty = st.text_input("Quantidade do lançamento", value=selected["quantity"], max_chars=18)
                 if st.form_submit_button("Salvar edição"):
                     def edit():
-                        item = room.reading(updated_product, address, updated_lot, updated_qty, selected["label_id"])
+                        item = room.reading(updated_product, address, updated_lot, updated_qty, selected["label_id"], catalog=catalog)
                         room.action(token, "edit", stage, address, code, item=item, line_id=line_id, expected=selected)
                     _apply(st, edit)
             if st.button("Remover leitura selecionada", key="ann_del_" + ident):
@@ -293,7 +269,7 @@ def _free_count(st, token, current):
                 st.rerun()
             if stage == room.EXTRA:
                 st.info("Conferência extra. Esta contagem não substitui nem soma com a oficial.")
-            _capture(st, token, stage, address, "", current["drafts"][key])
+            _capture(st, token, stage, address, "", current["drafts"][key], current["catalog"])
             return
     sent = st.session_state.get("_annual_last_sent_v3")
     if sent and sent[0] == token:
@@ -389,7 +365,7 @@ def _worker_stage(st, token, current, stage):
     else:
         address, code = st.selectbox("Posição para auditoria", tasks,
             format_func=lambda pair: " · ".join(pair), key="ann_audit_task")
-    _capture(st, token, stage, address, code, current["drafts"][room.task_key(stage, address, code, current["role"])])
+    _capture(st, token, stage, address, code, current["drafts"][room.task_key(stage, address, code, current["role"])], current["catalog"])
 
 
 def _worker(st, token, current):
@@ -411,69 +387,67 @@ def _worker(st, token, current):
         _worker_stage(st, token, current, AUDIT)
 
 
+def _select(st, access):
+    for key in ("_ann_active_first", "_annual_free_active", "_annual_address_conflict",
+                "_annual_last_sent_v3", "_annual_extra_sent", "_annual_camera_preview"):
+        st.session_state.pop(key, None)
+    if access is None:
+        st.session_state.pop(STATE, None)
+    else:
+        st.session_state[STATE] = access
+    st.rerun()
+
+
 def _inventory_list(st, manager):
-    st.subheader("Meus inventários")
-    codes = list(st.session_state.get(MEMBERSHIPS, []))
-    for token in codes:
-        try:
-            current = room.view(token)
-        except ValueError:
-            st.session_state[MEMBERSHIPS].remove(token)
-            continue
+    st.subheader("Inventários anuais" if manager else "Inventários disponíveis")
+    listings = room.list_rooms(manager=manager)
+    if not listings:
+        st.info("Nenhum inventário disponível." if manager else "Nenhum inventário liberado pela gestão no momento.")
+    for item in listings:
         with st.container(border=True):
-            st.text(current["display"])
-            st.text(current["title"])
-            st.caption("Encerrado" if current["closed"] else "Em andamento")
-            if st.button("Abrir inventário da equipe", key="annual_open_" + current["room_id"] + "_" + current["role"]):
-                if st.session_state.get(STATE) != token:
-                    st.session_state.pop("_ann_active_first", None)
-                st.session_state[STATE] = token
-                st.session_state[OPEN] = token
-                st.rerun()
-    with st.expander("Acessar outro inventário"):
-        _add_code(st, manager)
+            st.text(item["title"])
+            if manager:
+                status = "Encerrado" if item["closed"] else ("Liberado para contagem" if item["visible"] else "Somente gestão")
+                st.caption(status)
+                if st.button("Acompanhar inventário", key="ann_manage_" + item["id"]):
+                    _select(st, room.RoomAccess(item["id"], room.COORD, True))
+            else:
+                st.caption("Selecione apenas a sua equipe para iniciar ou retomar a contagem.")
+                for role, name in item["teams"]:
+                    if st.button(name, key=f'ann_team_{item["id"]}_{role}'):
+                        _select(st, room.RoomAccess(item["id"], role))
 
 
 def render(st, *, manager=False):
     st.warning("PILOTO · Dados fictícios do S2. Sem integração com o estoque real ou o Protheus.")
-    st.caption("Novos pilotos sugerem endereços aptos do S2 com base no relatório ENDEREÇO de teste.")
     st.caption("No endereço de contagem, use Abrir câmera para ler QR ou lance manualmente.")
     st.caption("Os rascunhos salvos ficam neste piloto por até três dias e dependem de o servidor não ser recriado.")
     token = st.session_state.get(STATE)
-    if not token:
-        _entry(st, manager)
-        return
-    try:
-        current = room.view(token)
-    except ValueError as exc:
-        st.session_state.pop(STATE, None)
-        st.warning(str(exc))
-        _entry(st, manager)
-        return
-    if current["role"] == room.COORD and not manager:
-        st.session_state.pop(STATE, None)
-        st.warning("A Coordenação exige login de Gestor no Inventário.")
-        _entry(st, False)
-        return
-    if st.button("Sair do piloto"):
-        for key in (STATE, OPEN, MEMBERSHIPS, "_ann_active_first", "_annual_last_sent_v3", "_annual_free_active", "_annual_address_conflict", "_annual_extra_sent"):
-            st.session_state.pop(key, None)
-        st.rerun()
-    if current["role"] != room.COORD and st.session_state.get(OPEN) != token:
-        codes = st.session_state.setdefault(MEMBERSHIPS, [])
-        if token not in codes:
-            codes.append(token)
-        _inventory_list(st, manager)
-        return
-    st.text("Acesso: " + current["display"])
-    if current["role"] != room.COORD:
-        st.caption(current["title"])
-        if st.button("Voltar aos meus inventários"):
-            st.session_state.pop(OPEN, None)
-            st.session_state.pop("_ann_active_first", None)
-            st.rerun()
-    st.button("Atualizar fila", key="ann_update", help="Busca alterações salvas pelas outras duplas.")
-    if current["role"] == room.COORD:
-        _coordinator(st, token, current)
+    if isinstance(token, room.RoomAccess) and token.manager == manager:
+        try:
+            current = room.view(token)
+        except ValueError as exc:
+            st.session_state.pop(STATE, None)
+            st.warning(str(exc))
+        else:
+            if st.button("Voltar aos inventários"):
+                _select(st, None)
+            st.text("Acesso: " + current["display"])
+            if current["role"] != room.COORD:
+                st.caption(current["title"])
+            st.button("Atualizar fila", key="ann_update", help="Busca alterações salvas pelas outras duplas.")
+            if current["role"] == room.COORD:
+                _coordinator(st, token, current)
+            else:
+                _worker(st, token, current)
+            return
     else:
-        _worker(st, token, current)
+        st.session_state.pop(STATE, None)
+    if manager:
+        joined, create = st.tabs(["Acompanhar", "Criar piloto"])
+        with joined:
+            _inventory_list(st, True)
+        with create:
+            _setup(st)
+    else:
+        _inventory_list(st, False)

@@ -347,9 +347,7 @@ def _setta_login_required():
   st.session_state['_setta_auth_policy_error']=str(exc)
   return True
 
-def _render_setta_auth_gate():
- if not _setta_login_required() or _auth_user():
-  return True
+def _render_setta_login_form():
  st.html('<div class="setta-inv-intro"><div class="setta-inv-breadcrumb">Setta / Acesso</div><h1>Entrar no Inventário</h1><p>Use a mesma conta do OperaHub.</p></div>')
  if st.session_state.get('_setta_auth_policy_error'):
   st.warning('Não foi possível confirmar a política central de acesso. Por segurança, o aplicativo permanece bloqueado até a autenticação.')
@@ -367,6 +365,11 @@ def _render_setta_auth_gate():
     st.rerun()
    else:
     st.error('Usuário ou senha inválidos.')
+
+def _render_setta_auth_gate():
+ if not _setta_login_required() or _auth_user():
+  return True
+ _render_setta_login_form()
  st.stop()
 def persist_cfg():
  save('cfg',cfg)
@@ -1247,6 +1250,9 @@ if _annual_pilot_active:
  from inventory_annual_ui import render as render_annual_pilot
  _sidebar_status_slot.info('Inventário Anual · Piloto sem dados reais')
  setta_shell.render_page(st,'Inventário Anual')
+ if not _auth_user():
+  with st.expander('Entrar como gestor'):
+   _render_setta_login_form()
  render_annual_pilot(st,manager=_can_manage_inventory() and _session_profile()=='Gestor')
  st.stop()
 
