@@ -441,10 +441,11 @@ def _inventory_list(st, manager):
                 st.caption(status)
                 if st.button("Acompanhar inventário", key="ann_manage_" + item["id"]):
                     _select(st, room.RoomAccess(item["id"], room.COORD, True))
-            else:
-                for role, name in item["teams"]:
-                    if st.button(name, key=f'ann_team_{item["id"]}_{role}'):
-                        _select(st, room.RoomAccess(item["id"], role))
+            elif item["teams"]:
+                with st.container(key=f'ann_team_grid_{item["id"]}'):
+                    for role, name in item["teams"]:
+                        if st.button(name, key=f'ann_team_{item["id"]}_{role}', width="stretch"):
+                            _select(st, room.RoomAccess(item["id"], role))
 
 
 def render(st, *, manager=False):

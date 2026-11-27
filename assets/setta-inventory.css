@@ -182,3 +182,19 @@ body [data-testid="stMain"] .st-key-setta_drawer_toggle button{background:#42424
 .setta-inv-stat{display:flex;align-items:center;gap:10px}
 .setta-inv-stat svg{width:34px;height:34px;background:#f0f0f0;border-radius:6px;padding:7px;color:var(--inv-ink);flex:none}
 @media(max-width:700px){.setta-inv-stat{display:block}.setta-inv-stat svg{display:none}}
+
+/* Equipes do Inventário Anual: largura e altura comuns, sem cortar nomes. */
+[data-testid="stVerticalBlock"][class*="st-key-ann_team_grid_"]{
+ display:grid!important;
+ grid-template-columns:repeat(auto-fill,minmax(min(100%,max(14rem,calc((100% - 16px) / 3))),1fr));
+ grid-auto-rows:1fr;
+ gap:8px!important;
+}
+[class*="st-key-ann_team_grid_"] > [data-testid="stElementContainer"],
+[class*="st-key-ann_team_grid_"] [data-testid="stButton"]{height:100%;min-width:0}
+[class*="st-key-ann_team_grid_"] button{
+ height:100%;min-height:44px;min-width:0;padding:8px 12px;border-radius:8px;
+ justify-content:flex-start;text-align:left;white-space:normal;overflow-wrap:anywhere;
+}
+[class*="st-key-ann_team_grid_"] button [data-testid="stMarkdownContainer"]{min-width:0}
+[class*="st-key-ann_team_grid_"] button:focus-visible{outline:2px solid #8a6500;outline-offset:-2px}
