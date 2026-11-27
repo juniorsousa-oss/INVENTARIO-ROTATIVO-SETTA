@@ -132,7 +132,7 @@ class AnnualPilot:
         if not complete or (empty and counts) or (not empty and not counts):
             raise ValueError("Confirme a vistoria e registre os itens ou declare o endereço vazio.")
         if any(code not in self._catalog for code in counts):
-            raise ValueError("Selecione um produto do catálogo fictício.")
+            raise ValueError("Selecione um produto do catálogo deste inventário.")
         observed = {k: qty(v) for k, v in counts.items()}
         if any(v == 0 for v in observed.values()):
             raise ValueError("Registre só os produtos encontrados, com quantidade positiva.")
@@ -223,9 +223,14 @@ class AnnualPilot:
         if not self.closed_at:
             raise ValueError("Feche o piloto para apurar as diferenças.")
         totals = []
+        excluded_addresses = set(self._snapshot) - set(self.eligible_addresses())
+        matched_codes = set(self._total) | {k for rows in self.positions.values() for k in rows}
+        matched_codes |= {k for a in excluded_addresses for k in self._snapshot[a]}
         for code, (description, cost) in self._catalog.items():
+            if code not in matched_codes:
+                continue
             counted = sum((rows[code].final for rows in self.positions.values() if code in rows), Decimal(0))
-            excluded = sum((self._snapshot[a].get(code, Decimal(0)) for a in EXCLUDED), Decimal(0))
+            excluded = sum((self._snapshot[a].get(code, Decimal(0)) for a in excluded_addresses), Decimal(0))
             adjusted = counted + excluded
             system = self._total.get(code, Decimal(0))
             delta = adjusted - system

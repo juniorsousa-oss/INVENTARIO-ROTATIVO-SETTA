@@ -18,6 +18,7 @@ function fixture(getUserMedia, role = "00000001,000101,3") {
     const init = vm.runInNewContext("(" + scanner.replace("export default ", "") + ")", {
         navigator: {mediaDevices: {getUserMedia}}, window, document: doc, setTimeout, clearTimeout,
         decodeQR: () => ({data: role}),
+        SettaBarcode: {decodeBarcode: () => null},
     });
     const dispose = init({parentElement:parent, setTriggerValue: (...args) => outputs.push(args)});
     return {open, close, resume, video, status, outputs, doc, dispose};
@@ -89,4 +90,21 @@ test("offers a new tap if the browser postpones playing an authorized stream", a
     assert.deepEqual(fx.outputs, [["scanned", "00000001,000101,3"]]);
     assert.equal(tracks.stops, 1);
     fx.dispose();
+});
+
+test("bundled reader decodes a real EAN-13 image without network calls", () => {
+    const lib = readFileSync(new URL("../assets/zxing-barcode-0.22.0.js", import.meta.url), "utf8");
+    const decode = vm.runInNewContext(lib + "\nSettaBarcode.decodeBarcode");
+    const L = ["0001101","0011001","0010011","0111101","0100011","0110001","0101111","0111011","0110111","0001011"];
+    // EAN-13 leading 0 means LLLLLL; last digit is the checksum.
+    const ean = "0123456789012";
+    const barPattern = "000000000000101" + [...ean.slice(1,7)].map(c=>L[c]).join("") + "01010"
+      + [...ean.slice(7)].map(c=>L[c].replace(/[01]/g, v=>v==="0" ? "1":"0")).join("") + "101000000000000";
+    const scale = 4, height = 96, width = barPattern.length * scale;
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let y=0;y<height;y++) for (let x=0;x<width;x++) {
+       const i=(y*width+x)*4, v=barPattern[Math.floor(x/scale)]==="1" ? 0:255;
+       data[i]=data[i+1]=data[i+2]=v; data[i+3]=255;
+    }
+    assert.equal(decode({data,width,height}), ean);
 });
