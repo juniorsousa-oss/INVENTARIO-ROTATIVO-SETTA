@@ -111,6 +111,19 @@ def _coordinator(st, token, current):
         st.dataframe([{"Equipe": data["name"], "Principal": data["lead"], "Auxiliar": data["assistant"],
                        "Endereços": ", ".join(a for a, owner in sorted(pilot.assignment.items()) if owner == idx) or "—"}
                       for idx, data in current["teams"].items()], hide_index=True)
+    if pilot.free:
+        with st.expander("Cópia de segurança"):
+            if st.button("Preparar cópia", key="annual_prepare_backup"):
+                try:
+                    data = room.backup_room(token)
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.download_button(
+                        "Baixar cópia do piloto", data=data,
+                        file_name=f'inventario-anual-{current["room_id"]}.json',
+                        mime="application/json", on_click="ignore", key="annual_download_backup",
+                    )
     if pilot.free and not pilot.closed_at:
         if current["visible"]:
             if st.button("Retirar da visão padrão"):
@@ -475,6 +488,16 @@ def render(st, *, manager=False, sign_in=None, sign_out=None):
         joined, create = st.tabs(["Acompanhar", "Criar piloto"])
         with joined:
             _inventory_list(st, True)
+            with st.expander("Restaurar cópia de segurança"):
+                uploaded = st.file_uploader("Arquivo da cópia", type=["json"], max_upload_size=8,
+                                            key="annual_backup_file")
+                if uploaded and st.button("Restaurar piloto"):
+                    try:
+                        restored = room.restore_room(uploaded.getvalue(), manager=True)
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        _select(st, restored)
         with create:
             _setup(st)
     else:

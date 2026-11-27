@@ -341,6 +341,65 @@ def _authorized(conn, token):
     return room, role, json.loads(raw)
 
 
+BACKUP_FORMAT = "setta-inventario-anual-piloto-v1"
+MAX_BACKUP_BYTES = 8 * 1024 * 1024
+
+
+def backup_room(access, *, path=PATH):
+    """Exporta uma visão consistente dos dados gravados, sem credenciais."""
+    if not isinstance(access, RoomAccess) or not access.manager or access.role != COORD:
+        raise ValueError("Somente a gestão pode baixar a cópia do piloto.")
+    with _connect(path) as conn:
+        room_id, _, state = _authorized_selection(conn, access)
+    if not state.get("free"):
+        raise ValueError("Este piloto antigo não é compatível com a cópia.")
+    payload = _encode({"id": room_id, "state": state})
+    data = _encode({"format": BACKUP_FORMAT, "payload": payload,
+                    "sha256": sha256(payload.encode("utf-8")).hexdigest()}).encode("utf-8")
+    if len(data) > MAX_BACKUP_BYTES:
+        raise ValueError("A cópia excedeu o limite de 8 MB. Nenhum dado foi alterado.")
+    return data
+
+
+def restore_room(data, *, manager=False, path=PATH):
+    """Restaura somente se a sala não existir; restauração sempre privada."""
+    if not manager:
+        raise ValueError("Somente a gestão pode restaurar uma cópia do piloto.")
+    if not data or len(data) > MAX_BACKUP_BYTES:
+        raise ValueError("Arquivo vazio ou maior que 8 MB.")
+    try:
+        envelope = json.loads(data)
+        payload = envelope["payload"]
+        if envelope["format"] != BACKUP_FORMAT or sha256(payload.encode("utf-8")).hexdigest() != envelope["sha256"]:
+            raise ValueError
+        backup = json.loads(payload)
+        room_id, state = backup["id"], backup["state"]
+        if not re.fullmatch(r"[a-f0-9]{16}", room_id) or state.get("free") is not True:
+            raise ValueError
+        if any(not isinstance(state[k], dict) for k in ("info", "drafts", "evidence", "extras")):
+            raise ValueError
+        pilot = _restore(state)
+        info = state["info"]
+        if not pilot.roster or set(pilot.roster) != set(info["teams"]):
+            raise ValueError
+        for team in info["teams"].values():
+            if not all(isinstance(team[k], str) for k in ("name", "lead", "assistant")):
+                raise ValueError
+        info["visible_to_guests"] = False
+        stored = _encode(state)
+    except (AttributeError, ArithmeticError, KeyError, TypeError, ValueError, RecursionError, UnicodeError):
+        raise ValueError("Cópia inválida, incompatível ou incompleta.") from None
+    now = int(time.time())
+    with _connect(path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if conn.execute("SELECT 1 FROM annual_rooms WHERE id=?", (room_id,)).fetchone():
+            raise ValueError("Este piloto já existe. Nenhum dado foi substituído.")
+        if conn.execute("SELECT COUNT(*) FROM annual_rooms WHERE expires>?", (now,)).fetchone()[0] >= MAX_ROOMS:
+            raise ValueError("Limite de pilotos em uso.")
+        conn.execute("INSERT INTO annual_rooms VALUES (?,?,?)", (room_id, now + TTL, stored))
+    return RoomAccess(room_id, COORD, True)
+
+
 def _key(stage, address, product=""):
     return "|".join((stage, address, product))
 
