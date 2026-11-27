@@ -84,3 +84,14 @@ class InventoryShellTests(TestCase):
         self.assertIn("inv-status-count", setta_shell.status_badge("EM CONTAGEM"))
         self.assertIn("inv-status-closed", setta_shell.status_badge("FECHADO"))
         self.assertIn("&lt;script&gt;", setta_shell.status_badge("<script>"))
+
+
+    def test_brand_info_alert_keeps_other_alert_kinds_untouched(self):
+        self.assertIn('[data-testid="stAlertContainer"]:has(> [data-testid="stAlertContentInfo"])',
+                      setta_shell._stylesheet())
+        block = setta_shell._stylesheet().split('stAlertContentInfo"]){', 1)[1].split('}', 1)[0]
+        self.assertIn('background-color:#fff4cf', block)
+        self.assertIn('color:var(--inv-ink)', block)
+        self.assertIn('solid var(--inv-accent)', block)
+        for other in ("Success", "Error", "Warning"):
+            self.assertNotIn(f'stAlertContent{other}', setta_shell._stylesheet())
